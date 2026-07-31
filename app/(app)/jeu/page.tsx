@@ -323,10 +323,21 @@ function CroyancesTab() {
   );
 }
 
+type SablierFilter = "tous" | "grands-pretres-clercs" | "pretres";
+
+type SablierRow = {
+  key: string;
+  religionName: string;
+  titulaire: string | null;
+  clerc: string | null;
+  type: "Grand-Prêtre / Clerc" | "Prêtre";
+};
+
 function TitresTab() {
   const [summary, setSummary] = useState<SablierSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<SablierFilter>("tous");
 
   useEffect(() => {
     getSablierSummary()
@@ -338,83 +349,92 @@ function TitresTab() {
     return <p className="text-sm text-foreground/60">Chargement…</p>;
 
   const q = query.toLowerCase();
-  const visiblePairs = summary.sharedPairs.filter(
-    (p) =>
-      (p.grand_priest_name ?? "").toLowerCase().includes(q) ||
-      (p.cleric_name ?? "").toLowerCase().includes(q) ||
-      p.religion_name.toLowerCase().includes(q),
-  );
-  const visiblePriests = summary.individualPriests.filter(
-    (p) =>
-      (p.priest_name ?? "").toLowerCase().includes(q) ||
-      p.religion_name.toLowerCase().includes(q),
-  );
+
+  const pairRows: SablierRow[] = summary.sharedPairs
+    .filter(
+      (p) =>
+        (p.grand_priest_name ?? "").toLowerCase().includes(q) ||
+        (p.cleric_name ?? "").toLowerCase().includes(q) ||
+        p.religion_name.toLowerCase().includes(q),
+    )
+    .map((p) => ({
+      key: `pair-${p.external_id}`,
+      religionName: p.religion_name,
+      titulaire: p.grand_priest_name,
+      clerc: p.cleric_name,
+      type: "Grand-Prêtre / Clerc",
+    }));
+
+  const priestRows: SablierRow[] = summary.individualPriests
+    .filter(
+      (p) =>
+        (p.priest_name ?? "").toLowerCase().includes(q) ||
+        p.religion_name.toLowerCase().includes(q),
+    )
+    .map((p) => ({
+      key: `priest-${p.external_id}`,
+      religionName: p.religion_name,
+      titulaire: p.priest_name,
+      clerc: null,
+      type: "Prêtre",
+    }));
+
+  const rows: SablierRow[] =
+    filter === "grands-pretres-clercs"
+      ? pairRows
+      : filter === "pretres"
+        ? priestRows
+        : [...pairRows, ...priestRows];
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Rechercher un personnage ou une croyance…"
-        />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Rechercher un personnage ou une croyance…"
+          />
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as SablierFilter)}
+            className="rounded-full border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+          >
+            <option value="tous">Tous les sabliers</option>
+            <option value="grands-pretres-clercs">
+              Grands-prêtres ou clercs
+            </option>
+            <option value="pretres">Prêtres</option>
+          </select>
+        </div>
         <span className="text-sm font-medium text-foreground">
-          {summary.total} sabliers au total ({summary.sharedPairs.length}{" "}
-          partagés Grand-Prêtre/Clerc + {summary.individualPriests.length}{" "}
-          individuels Prêtre)
+          {rows.length} / {summary.total} sabliers
         </span>
       </div>
 
-      <h3 className="mb-2 font-semibold text-foreground">
-        Sabliers partagés — Grand-Prêtre et Clerc ({visiblePairs.length})
-      </h3>
-      <div className="mb-6 overflow-x-auto">
-        <table className="w-full min-w-[600px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
-              <th className="py-2 pr-4 font-medium">Croyance</th>
-              <th className="py-2 pr-4 font-medium">Grand-Prêtre</th>
-              <th className="py-2 pr-4 font-medium">Clerc</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visiblePairs.map((p) => (
-              <tr key={p.external_id} className={rowClassName}>
-                <td className="py-2 pr-4 text-foreground/80">
-                  {p.religion_name}
-                </td>
-                <td className="py-2 pr-4 text-foreground">
-                  {p.grand_priest_name ?? "—"}
-                </td>
-                <td className="py-2 pr-4 text-foreground/80">
-                  {p.cleric_name ?? "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <h3 className="mb-2 font-semibold text-foreground">
-        Sabliers individuels — Prêtres ({visiblePriests.length})
-      </h3>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[400px] text-left text-sm">
+        <table className="w-full min-w-[700px] text-left text-sm">
           <thead>
             <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
               <th className="py-2 pr-4 font-medium">Croyance</th>
-              <th className="py-2 pr-4 font-medium">Prêtre</th>
+              <th className="py-2 pr-4 font-medium">Titulaire</th>
+              <th className="py-2 pr-4 font-medium">Clerc</th>
+              <th className="py-2 pr-4 font-medium">Type</th>
             </tr>
           </thead>
           <tbody>
-            {visiblePriests.map((p) => (
-              <tr key={p.external_id} className={rowClassName}>
+            {rows.map((r) => (
+              <tr key={r.key} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground/80">
-                  {p.religion_name}
+                  {r.religionName}
                 </td>
                 <td className="py-2 pr-4 text-foreground">
-                  {p.priest_name ?? "—"}
+                  {r.titulaire ?? "—"}
                 </td>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {r.clerc ?? "—"}
+                </td>
+                <td className="py-2 pr-4 text-foreground/80">{r.type}</td>
               </tr>
             ))}
           </tbody>
