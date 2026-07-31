@@ -42,8 +42,7 @@ export type FrontData = {
 export type FrontAssignments = Record<FrontColor, FrontData>;
 
 export function maxOrganizersFor(guildCount: number): number {
-  if (guildCount <= 0) return 0;
-  return guildCount === 1 ? 3 : 2;
+  return guildCount * 3;
 }
 
 function emptyAssignments(): FrontAssignments {

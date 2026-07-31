@@ -27,3 +27,33 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.prose-editor {
+  min-height: inherit;
+}
+
+.prose-editor p {
+  margin: 0 0 0.5em;
+}
+
+.prose-editor ul {
+  list-style-type: disc;
+  padding-left: 1.25em;
+}
+
+.prose-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.25em;
+}
+
+.prose-editor blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.15);
+  padding-left: 0.75em;
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose-editor blockquote {
+    border-left-color: rgba(255, 255, 255, 0.2);
+  }
+}

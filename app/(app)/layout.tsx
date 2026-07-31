@@ -26,6 +26,7 @@ import {
   Scroll,
   ShieldUser,
   Swords,
+  UserRound,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -35,17 +36,43 @@ import { orderItems } from "@/lib/order-items";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 
+type IconComponent = React.ComponentType<{
+  size?: number;
+  className?: string;
+}>;
+
+function KingIcon({
+  size = 20,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`relative inline-flex items-center justify-center ${className ?? ""}`}
+      style={{ width: size, height: size }}
+    >
+      <UserRound size={size} />
+      <Crown
+        size={Math.round(size * 0.55)}
+        className="absolute -top-1 left-1/2 -translate-x-1/2"
+      />
+    </span>
+  );
+}
+
 type NavItem = {
   href: string;
   label: string;
-  icon: typeof Castle;
+  icon: IconComponent;
 };
 
 const ALL_MODULE_ITEMS: NavItem[] = [
   { href: "/editeur-carte", label: "Éditeur de carte", icon: Scroll },
   { href: "/activites", label: "Activités", icon: Swords },
   { href: "/jeu", label: "Jeu", icon: ChessKnight },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: Crown },
+  { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
 ];
 
 const BOTTOM_NAV_ITEMS = [
@@ -63,7 +90,7 @@ function SidebarItem({
 }: {
   href?: string;
   label: string;
-  icon: typeof Castle;
+  icon: IconComponent;
   active?: boolean;
   onClick?: () => void;
   iconWrapperClassName?: string;

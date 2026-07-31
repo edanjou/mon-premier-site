@@ -10,13 +10,15 @@ export default function RequireFeature({
   feature,
   children,
 }: {
-  feature: FeatureKey;
+  feature: FeatureKey | readonly FeatureKey[];
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "allowed" | "denied">(
     "checking",
   );
+  const features = Array.isArray(feature) ? feature : [feature];
+  const featuresKey = features.join(",");
 
   useEffect(() => {
     let cancelled = false;
@@ -34,14 +36,14 @@ export default function RequireFeature({
         .from("permissions")
         .select("granted")
         .eq("user_id", profile.id)
-        .eq("feature", feature)
-        .maybeSingle();
-      if (!cancelled) setStatus(data?.granted ? "allowed" : "denied");
+        .in("feature", featuresKey.split(","));
+      const allowed = (data ?? []).some((row) => row.granted);
+      if (!cancelled) setStatus(allowed ? "allowed" : "denied");
     })();
     return () => {
       cancelled = true;
     };
-  }, [feature, router]);
+  }, [featuresKey, router]);
 
   if (status === "checking") {
     return (

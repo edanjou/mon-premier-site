@@ -6,16 +6,21 @@ import {
   Archive,
   ArrowLeft,
   ArrowUpRight,
+  Check,
   Circle as CircleIcon,
   Copy,
+  FilePlus,
   Folder,
   Images,
+  Library,
   Lock,
   LockOpen,
   Menu,
   MousePointer2,
+  Paperclip,
   Pencil,
   Pentagon,
+  Save,
   Slash,
   Trash2,
   X,
@@ -45,6 +50,13 @@ import {
   type MediaFile,
   type MediaFolder,
 } from "@/lib/media-library";
+import {
+  createSavedMap,
+  deleteSavedMap,
+  listSavedMaps,
+  updateSavedMap,
+  type SavedMap,
+} from "@/lib/saved-maps";
 
 type DragShapeKind = "line" | "arrow" | "circle";
 type MapShapeKind = DragShapeKind | "polygon";
@@ -57,9 +69,7 @@ function isShapeKind(tool: Tool): tool is DragShapeKind {
   return (SHAPE_TOOLS as Tool[]).includes(tool);
 }
 
-type LogoColor = "black" | "white";
-
-type OverlayShape = {
+export type OverlayShape = {
   id: string;
   src: string;
   x: number;
@@ -67,12 +77,11 @@ type OverlayShape = {
   width: number;
   height: number;
   rotation: number;
-  logoColor?: LogoColor;
 };
 
 type DrawStyle = "solid" | "dashed";
 
-type DrawnLine = {
+export type DrawnLine = {
   id: string;
   points: number[];
   stroke: string;
@@ -85,7 +94,7 @@ type DrawnLine = {
   scaleY: number;
 };
 
-type MapShape = {
+export type MapShape = {
   id: string;
   kind: MapShapeKind;
   x: number;
@@ -102,9 +111,17 @@ type MapShape = {
   fillOpacity: number;
 };
 
-type CanvasSize = {
+export type CanvasSize = {
   width: number;
   height: number;
+};
+
+export type MapEditorData = {
+  backgroundSrc: string | null;
+  canvasSize: CanvasSize;
+  overlays: OverlayShape[];
+  lines: DrawnLine[];
+  mapShapes: MapShape[];
 };
 
 type DragOrigin = {
@@ -126,12 +143,11 @@ const MIN_STAGE_SCALE = 0.2;
 const MAX_STAGE_SCALE = 4;
 const OVERLAY_SCALE = 0.25;
 const BACKGROUND_SCALE = 3;
-const LOGO_SRC_BY_COLOR: Record<LogoColor, string> = {
-  black: "/bicolline-logo-black.svg",
-  white: "/bicolline-logo-white.svg",
-};
-const LOGO_MARGIN = 24;
-const LOGO_MAX_WIDTH = 90;
+const WATERMARK_SRC = "/bicolline-logo-white.svg";
+const WATERMARK_MARGIN = 24;
+const WATERMARK_MAX_WIDTH = 90;
+const WATERMARK_NATURAL_WIDTH = 233.744;
+const WATERMARK_NATURAL_HEIGHT = 267.476;
 const DEFAULT_BACKGROUND_URL =
   "https://cfduycvxggikaxjilbkf.supabase.co/storage/v1/object/public/media/37e4ab42-762e-4453-9542-7d5204beb886.jpg";
 
@@ -515,6 +531,30 @@ function FolderPickerModal({
   );
 }
 
+function MapWatermark({
+  displayWidth,
+  displayHeight,
+}: {
+  displayWidth: number;
+  displayHeight: number;
+}) {
+  const [image] = useImage(WATERMARK_SRC, "anonymous");
+  const scale = Math.min(1, WATERMARK_MAX_WIDTH / WATERMARK_NATURAL_WIDTH);
+  const width = WATERMARK_NATURAL_WIDTH * scale;
+  const height = WATERMARK_NATURAL_HEIGHT * scale;
+
+  return (
+    <KonvaImage
+      image={image}
+      x={displayWidth - width - WATERMARK_MARGIN}
+      y={displayHeight - height - WATERMARK_MARGIN}
+      width={width}
+      height={height}
+      listening={false}
+    />
+  );
+}
+
 function BackgroundImage({
   src,
   imageRef,
@@ -744,12 +784,14 @@ function OverlayImage({
         const scaleY = node.scaleY();
         node.scaleX(1);
         node.scaleY(1);
+        const width = Math.max(5, node.width() * scaleX);
+        const height = Math.max(5, node.height() * scaleY);
         onChange({
           x: node.x(),
           y: node.y(),
           rotation: node.rotation(),
-          width: Math.max(5, node.width() * scaleX),
-          height: Math.max(5, node.height() * scaleY),
+          width,
+          height,
         });
       }}
     />
@@ -956,7 +998,15 @@ function MapShapeItem({
   );
 }
 
-export default function MapEditor() {
+export default function MapEditor({
+  embedded = false,
+  onAttach,
+  onCancel,
+}: {
+  embedded?: boolean;
+  onAttach?: (result: { name: string; url: string }) => void;
+  onCancel?: () => void;
+} = {}) {
   const [backgroundSrc, setBackgroundSrc] = useState<string | null>(
     DEFAULT_BACKGROUND_URL,
   );
@@ -992,6 +1042,16 @@ export default function MapEditor() {
   const [fillColor, setFillColor] = useState(DRAW_COLOR_SWATCHES[1]);
   const [fillOpacity, setFillOpacity] = useState(0.3);
   const [mapShapes, setMapShapes] = useState<MapShape[]>([]);
+
+  const [mapName, setMapName] = useState("");
+  const [currentSavedMapId, setCurrentSavedMapId] = useState<string | null>(
+    null,
+  );
+  const [isSavingMap, setIsSavingMap] = useState(false);
+  const [isAttaching, setIsAttaching] = useState(false);
+  const [isSavedMapsOpen, setIsSavedMapsOpen] = useState(false);
+  const [savedMaps, setSavedMaps] = useState<SavedMap[]>([]);
+  const [isLoadingSavedMaps, setIsLoadingSavedMaps] = useState(false);
 
   const stageRef = useRef<Konva.Stage>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
@@ -1276,35 +1336,6 @@ export default function MapEditor() {
     }
 
     setOverlays((prev) => [...prev, ...newOverlays]);
-  };
-
-  const handleAddLogo = async (color: LogoColor) => {
-    const src = LOGO_SRC_BY_COLOR[color];
-    const { width, height } = await getImageSize(src);
-    const scale = Math.min(1, LOGO_MAX_WIDTH / width);
-    const w = width * scale;
-    const h = height * scale;
-
-    setOverlays((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        src,
-        x: canvasSize.width - w - LOGO_MARGIN,
-        y: canvasSize.height - h - LOGO_MARGIN,
-        width: w,
-        height: h,
-        rotation: 0,
-        logoColor: color,
-      },
-    ]);
-  };
-
-  const handleSetLogoColor = (id: string, color: LogoColor) => {
-    handleOverlayChange(id, {
-      src: LOGO_SRC_BY_COLOR[color],
-      logoColor: color,
-    });
   };
 
   const handleAddOverlays = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1853,9 +1884,9 @@ export default function MapEditor() {
     }
   };
 
-  const handleExport = () => {
+  const getStagePngDataUrl = (): string | null => {
     const stage = stageRef.current;
-    if (!stage) return;
+    if (!stage) return null;
 
     const prevSelection = [...selectedIds];
     transformerRef.current?.nodes([]);
@@ -1871,17 +1902,214 @@ export default function MapEditor() {
     }
     stage.batchDraw();
 
-    downloadDataUrl(dataUrl, "carte.png");
+    return dataUrl;
   };
 
-  const selectedLogoOverlay =
-    selectedIds.length === 1
-      ? overlays.find((o) => o.id === selectedIds[0] && o.logoColor)
-      : undefined;
+  const handleExport = () => {
+    const dataUrl = getStagePngDataUrl();
+    if (!dataUrl) return;
+    downloadDataUrl(dataUrl, `${sanitizeSegment(mapName || "carte")}.png`);
+  };
+
+  const persistBlobUrl = async (
+    src: string,
+    folder: string,
+  ): Promise<string> => {
+    if (!src.startsWith("blob:")) return src;
+    const blob = await (await fetch(src)).blob();
+    const file = new File([blob], "image", {
+      type: blob.type || "image/png",
+    });
+    const uploaded = await uploadMedia(file, folder);
+    return uploaded.url;
+  };
+
+  const persistProjectAssets = async (): Promise<MapEditorData> => {
+    const persistedBackground = backgroundSrc
+      ? await persistBlobUrl(backgroundSrc, "cartes-fonds")
+      : null;
+    const persistedOverlays = await Promise.all(
+      overlays.map(async (o) => ({
+        ...o,
+        src: await persistBlobUrl(o.src, "cartes-fonds"),
+      })),
+    );
+
+    if (persistedBackground !== backgroundSrc) {
+      if (backgroundBlobUrlRef.current) {
+        URL.revokeObjectURL(backgroundBlobUrlRef.current);
+        backgroundBlobUrlRef.current = null;
+      }
+      setBackgroundSrc(persistedBackground);
+    }
+    if (persistedOverlays.some((o, i) => o.src !== overlays[i]?.src)) {
+      setOverlays(persistedOverlays);
+    }
+
+    return {
+      backgroundSrc: persistedBackground,
+      canvasSize,
+      overlays: persistedOverlays,
+      lines,
+      mapShapes,
+    };
+  };
+
+  const loadProjectData = (data: MapEditorData) => {
+    setBackgroundSrc(data.backgroundSrc);
+    setCanvasSize(data.canvasSize);
+    setOverlays(data.overlays);
+    setLines(data.lines);
+    setMapShapes(data.mapShapes);
+    setSelectedIds([]);
+  };
+
+  const handleNewMap = () => {
+    setBackgroundSrc(DEFAULT_BACKGROUND_URL);
+    setCanvasSize({ width: 1200, height: 800 });
+    setOverlays([]);
+    setLines([]);
+    setMapShapes([]);
+    setSelectedIds([]);
+    setMapName("");
+    setCurrentSavedMapId(null);
+  };
+
+  const handleSaveMap = async () => {
+    const name = mapName.trim();
+    if (!name) {
+      setUploadError("Donne un nom à la carte avant de l'enregistrer.");
+      return;
+    }
+    setUploadError(null);
+    setIsSavingMap(true);
+    try {
+      const data = await persistProjectAssets();
+      const dataUrl = getStagePngDataUrl();
+      let previewUrl: string | null = null;
+      if (dataUrl) {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], "apercu.png", { type: "image/png" });
+        const uploaded = await uploadMedia(file, "cartes");
+        previewUrl = uploaded.url;
+      }
+      const payload = { name, data, preview_url: previewUrl };
+      if (currentSavedMapId) {
+        await updateSavedMap(currentSavedMapId, payload);
+      } else {
+        const created = await createSavedMap(payload);
+        setCurrentSavedMapId(created.id);
+      }
+    } catch {
+      setUploadError("Échec de l'enregistrement de la carte.");
+    } finally {
+      setIsSavingMap(false);
+    }
+  };
+
+  const openSavedMaps = () => {
+    setIsSavedMapsOpen(true);
+    setIsLoadingSavedMaps(true);
+    listSavedMaps()
+      .then(setSavedMaps)
+      .catch(() =>
+        setUploadError("Impossible de charger les cartes enregistrées."),
+      )
+      .finally(() => setIsLoadingSavedMaps(false));
+  };
+
+  const handleLoadSavedMap = (map: SavedMap) => {
+    loadProjectData(map.data as MapEditorData);
+    setMapName(map.name);
+    setCurrentSavedMapId(map.id);
+    setIsSavedMapsOpen(false);
+  };
+
+  const handleRenameSavedMap = async (map: SavedMap) => {
+    const name = window.prompt("Nom de la carte :", map.name);
+    if (!name || name === map.name) return;
+    try {
+      await updateSavedMap(map.id, {
+        name,
+        data: map.data,
+        preview_url: map.preview_url,
+      });
+      setSavedMaps((prev) =>
+        prev.map((m) => (m.id === map.id ? { ...m, name } : m)),
+      );
+      if (currentSavedMapId === map.id) setMapName(name);
+    } catch {
+      setUploadError("Échec du renommage de la carte.");
+    }
+  };
+
+  const handleDeleteSavedMap = async (map: SavedMap) => {
+    if (!window.confirm(`Supprimer la carte "${map.name}" ?`)) return;
+    try {
+      await deleteSavedMap(map.id);
+      setSavedMaps((prev) => prev.filter((m) => m.id !== map.id));
+      if (currentSavedMapId === map.id) setCurrentSavedMapId(null);
+    } catch {
+      setUploadError("Échec de la suppression de la carte.");
+    }
+  };
+
+  const handleAttach = async () => {
+    if (!onAttach) return;
+    setIsAttaching(true);
+    setUploadError(null);
+    try {
+      const dataUrl = getStagePngDataUrl();
+      if (!dataUrl) return;
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], "carte.png", { type: "image/png" });
+      const uploaded = await uploadMedia(file, "chapitres");
+      onAttach({ name: mapName.trim() || "Carte", url: uploaded.url });
+    } catch {
+      setUploadError("Échec du téléversement de la carte.");
+    } finally {
+      setIsAttaching(false);
+    }
+  };
+
+  const handleAttachSavedMap = (map: SavedMap) => {
+    if (!onAttach || !map.preview_url) return;
+    onAttach({ name: map.name, url: map.preview_url });
+  };
 
   return (
     <div className="flex flex-1 flex-col items-center gap-6 bg-background px-6 py-4 font-sans">
+      {embedded && (
+        <div className="flex w-full max-w-[1200px] items-center justify-between">
+          <h2 className="font-semibold text-foreground">Éditeur de carte</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={handleAttach}
+              disabled={isAttaching}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Check size={16} />
+              {isAttaching ? "…" : "Joindre au chapitre"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-center gap-4">
+        <input
+          type="text"
+          value={mapName}
+          onChange={(e) => setMapName(e.target.value)}
+          placeholder="Nom de la carte"
+          className="rounded-full border border-black/[.08] bg-white px-4 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-900"
+        />
         <div ref={uploadMenuRef} className="relative">
           <button
             type="button"
@@ -1920,17 +2148,6 @@ export default function MapEditor() {
                   }}
                 />
               </label>
-
-              <button
-                type="button"
-                onClick={() => {
-                  handleAddLogo("black");
-                  setIsUploadMenuOpen(false);
-                }}
-                className="block w-full rounded px-3 py-2 text-left text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]"
-              >
-                Afficher le logo Bicolline
-              </button>
 
               <label className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]">
                 <Archive size={16} />
@@ -1977,12 +2194,42 @@ export default function MapEditor() {
           </select>
         </div>
 
-        <button
-          onClick={handleExport}
-          className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-[#1c1c1c] transition-colors hover:bg-[#d49f00]"
-        >
-          Exporter
-        </button>
+        <div className="flex flex-nowrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleNewMap}
+            className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            <FilePlus size={16} />
+            Nouvelle carte
+          </button>
+
+          <button
+            type="button"
+            onClick={openSavedMaps}
+            className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            <Library size={16} />
+            Mes cartes
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSaveMap}
+            disabled={isSavingMap}
+            className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            <Save size={16} />
+            {isSavingMap ? "…" : "Enregistrer"}
+          </button>
+
+          <button
+            onClick={handleExport}
+            className="whitespace-nowrap rounded-full bg-accent px-5 py-2 text-sm font-medium text-[#1c1c1c] transition-colors hover:bg-[#d49f00]"
+          >
+            Exporter
+          </button>
+        </div>
       </div>
 
       {uploadError && (
@@ -2087,32 +2334,6 @@ export default function MapEditor() {
               </div>
             </>
           )}
-        </div>
-      )}
-
-      {selectedLogoOverlay && (
-        <div className="flex items-center gap-2 rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-zinc-900">
-          <span className="text-zinc-600 dark:text-zinc-400">
-            Couleur du logo
-          </span>
-          <button
-            type="button"
-            onClick={() => handleSetLogoColor(selectedLogoOverlay.id, "black")}
-            aria-label="Logo noir"
-            className={`h-6 w-6 rounded-full border-2 bg-black ${
-              selectedLogoOverlay.logoColor === "black"
-                ? "border-primary"
-                : "border-transparent"
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => handleSetLogoColor(selectedLogoOverlay.id, "white")}
-            aria-label="Logo blanc"
-            className={`h-6 w-6 rounded-full border-2 border-zinc-300 bg-white ${
-              selectedLogoOverlay.logoColor === "white" ? "border-primary" : ""
-            }`}
-          />
         </div>
       )}
 
@@ -2359,6 +2580,18 @@ export default function MapEditor() {
                   listening={false}
                 />
               </Layer>
+              <Layer
+                listening={false}
+                scaleX={1 / totalStageScale}
+                scaleY={1 / totalStageScale}
+                x={-stagePosX / totalStageScale}
+                y={-stagePosY / totalStageScale}
+              >
+                <MapWatermark
+                  displayWidth={displayWidth}
+                  displayHeight={displayHeight}
+                />
+              </Layer>
             </Stage>
           </div>
         </div>
@@ -2404,6 +2637,132 @@ export default function MapEditor() {
           onCancel={() => setPendingUpload(null)}
         />
       )}
+
+      {isSavedMapsOpen && (
+        <SavedMapsPanel
+          maps={savedMaps}
+          isLoading={isLoadingSavedMaps}
+          canAttach={Boolean(onAttach)}
+          onClose={() => setIsSavedMapsOpen(false)}
+          onLoad={handleLoadSavedMap}
+          onRename={handleRenameSavedMap}
+          onDelete={handleDeleteSavedMap}
+          onAttach={handleAttachSavedMap}
+        />
+      )}
+    </div>
+  );
+}
+
+function SavedMapsPanel({
+  maps,
+  isLoading,
+  canAttach,
+  onClose,
+  onLoad,
+  onRename,
+  onDelete,
+  onAttach,
+}: {
+  maps: SavedMap[];
+  isLoading: boolean;
+  canAttach: boolean;
+  onClose: () => void;
+  onLoad: (map: SavedMap) => void;
+  onRename: (map: SavedMap) => void;
+  onDelete: (map: SavedMap) => void;
+  onAttach: (map: SavedMap) => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-3xl flex-col gap-4 overflow-hidden rounded-xl bg-white p-6 dark:bg-zinc-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+            Mes cartes
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {isLoading && (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Chargement…
+          </p>
+        )}
+        {!isLoading && maps.length === 0 && (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Aucune carte enregistrée pour l&apos;instant.
+          </p>
+        )}
+
+        <div className="grid max-h-[60vh] grid-cols-2 gap-4 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
+          {maps.map((map) => (
+            <div
+              key={map.id}
+              className="group relative flex flex-col gap-2 rounded-lg border border-black/[.08] p-2 dark:border-white/[.145]"
+            >
+              <button
+                type="button"
+                onClick={() => onLoad(map)}
+                className="flex aspect-video items-center justify-center overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
+              >
+                {map.preview_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={map.preview_url}
+                    alt={map.name}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <Library size={24} className="text-zinc-400" />
+                )}
+              </button>
+              <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                {map.name}
+              </span>
+              <div className="flex items-center justify-between gap-1">
+                <button
+                  type="button"
+                  onClick={() => onRename(map)}
+                  aria-label="Renommer"
+                  className="rounded p-1 text-zinc-500 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                >
+                  <Pencil size={14} />
+                </button>
+                {canAttach && (
+                  <button
+                    type="button"
+                    onClick={() => onAttach(map)}
+                    aria-label="Joindre au chapitre"
+                    className="rounded p-1 text-primary hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                  >
+                    <Paperclip size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onDelete(map)}
+                  aria-label="Supprimer"
+                  className="rounded p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
