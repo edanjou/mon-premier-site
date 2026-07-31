@@ -1,20 +1,30 @@
 import { supabase } from "@/lib/supabase";
 
+const PAGE_SIZE = 1000;
+
 export type Religion = {
   name: string;
   memberCount: number;
 };
 
 export async function listReligions(): Promise<Religion[]> {
-  const { data, error } = await supabase
-    .from("religion_members")
-    .select("religion_name");
-
-  if (error) throw error;
-
   const counts = new Map<string, number>();
-  for (const row of data ?? []) {
-    counts.set(row.religion_name, (counts.get(row.religion_name) ?? 0) + 1);
+  let from = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("religion_members")
+      .select("religion_name")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    for (const row of data) {
+      counts.set(row.religion_name, (counts.get(row.religion_name) ?? 0) + 1);
+    }
+
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
   }
 
   return [...counts.entries()]
@@ -22,16 +32,26 @@ export async function listReligions(): Promise<Religion[]> {
     .sort((a, b) => a.name.localeCompare(b.name, "fr"));
 }
 
-export type TitleHolder = {
+export type SharedSablier = {
   external_id: number;
   religion_name: string;
-  character_name: string | null;
+  grand_priest_name: string | null;
   cleric_name: string | null;
-  is_grand_priest: boolean;
-  is_priest: boolean;
 };
 
-export async function listTitleHolders(): Promise<TitleHolder[]> {
+export type IndividualSablier = {
+  external_id: number;
+  religion_name: string;
+  priest_name: string | null;
+};
+
+export type SablierSummary = {
+  total: number;
+  sharedPairs: SharedSablier[];
+  individualPriests: IndividualSablier[];
+};
+
+export async function getSablierSummary(): Promise<SablierSummary> {
   const { data, error } = await supabase
     .from("religion_members")
     .select(
@@ -41,5 +61,27 @@ export async function listTitleHolders(): Promise<TitleHolder[]> {
     .order("religion_name", { ascending: true });
 
   if (error) throw error;
-  return data ?? [];
+
+  const sharedPairs = (data ?? [])
+    .filter((r) => r.is_grand_priest)
+    .map((r) => ({
+      external_id: r.external_id,
+      religion_name: r.religion_name,
+      grand_priest_name: r.character_name,
+      cleric_name: r.cleric_name,
+    }));
+
+  const individualPriests = (data ?? [])
+    .filter((r) => r.is_priest)
+    .map((r) => ({
+      external_id: r.external_id,
+      religion_name: r.religion_name,
+      priest_name: r.character_name,
+    }));
+
+  return {
+    total: sharedPairs.length + individualPriests.length,
+    sharedPairs,
+    individualPriests,
+  };
 }

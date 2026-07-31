@@ -8,10 +8,10 @@ import { searchCharacters, type Character } from "@/lib/characters";
 import { listGuilds, type Guild } from "@/lib/guilds";
 import { listGuildSeals, type GuildSeal } from "@/lib/guild-seals";
 import {
+  getSablierSummary,
   listReligions,
-  listTitleHolders,
   type Religion,
-  type TitleHolder,
+  type SablierSummary,
 } from "@/lib/religions";
 
 type Tab = "guildes" | "sceaux" | "personnages" | "croyances" | "titres";
@@ -324,24 +324,31 @@ function CroyancesTab() {
 }
 
 function TitresTab() {
-  const [holders, setHolders] = useState<TitleHolder[]>([]);
+  const [summary, setSummary] = useState<SablierSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    listTitleHolders()
-      .then(setHolders)
+    getSablierSummary()
+      .then(setSummary)
       .finally(() => setIsLoading(false));
   }, []);
 
-  const visible = holders.filter(
-    (h) =>
-      (h.character_name ?? "").toLowerCase().includes(query.toLowerCase()) ||
-      h.religion_name.toLowerCase().includes(query.toLowerCase()),
-  );
-
-  if (isLoading)
+  if (isLoading || !summary)
     return <p className="text-sm text-foreground/60">Chargement…</p>;
+
+  const q = query.toLowerCase();
+  const visiblePairs = summary.sharedPairs.filter(
+    (p) =>
+      (p.grand_priest_name ?? "").toLowerCase().includes(q) ||
+      (p.cleric_name ?? "").toLowerCase().includes(q) ||
+      p.religion_name.toLowerCase().includes(q),
+  );
+  const visiblePriests = summary.individualPriests.filter(
+    (p) =>
+      (p.priest_name ?? "").toLowerCase().includes(q) ||
+      p.religion_name.toLowerCase().includes(q),
+  );
 
   return (
     <div>
@@ -351,34 +358,62 @@ function TitresTab() {
           onChange={setQuery}
           placeholder="Rechercher un personnage ou une croyance…"
         />
-        <span className="text-sm text-foreground/60">
-          {visible.length} / {holders.length} titres
+        <span className="text-sm font-medium text-foreground">
+          {summary.total} sabliers au total ({summary.sharedPairs.length}{" "}
+          partagés Grand-Prêtre/Clerc + {summary.individualPriests.length}{" "}
+          individuels Prêtre)
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px] text-left text-sm">
+
+      <h3 className="mb-2 font-semibold text-foreground">
+        Sabliers partagés — Grand-Prêtre et Clerc ({visiblePairs.length})
+      </h3>
+      <div className="mb-6 overflow-x-auto">
+        <table className="w-full min-w-[600px] text-left text-sm">
           <thead>
             <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
-              <th className="py-2 pr-4 font-medium">Personnage</th>
               <th className="py-2 pr-4 font-medium">Croyance</th>
+              <th className="py-2 pr-4 font-medium">Grand-Prêtre</th>
               <th className="py-2 pr-4 font-medium">Clerc</th>
-              <th className="py-2 pr-4 font-medium">Titre</th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((h) => (
-              <tr key={h.external_id} className={rowClassName}>
+            {visiblePairs.map((p) => (
+              <tr key={p.external_id} className={rowClassName}>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {p.religion_name}
+                </td>
                 <td className="py-2 pr-4 text-foreground">
-                  {h.character_name ?? "—"}
+                  {p.grand_priest_name ?? "—"}
                 </td>
                 <td className="py-2 pr-4 text-foreground/80">
-                  {h.religion_name}
+                  {p.cleric_name ?? "—"}
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="mb-2 font-semibold text-foreground">
+        Sabliers individuels — Prêtres ({visiblePriests.length})
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[400px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+              <th className="py-2 pr-4 font-medium">Croyance</th>
+              <th className="py-2 pr-4 font-medium">Prêtre</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visiblePriests.map((p) => (
+              <tr key={p.external_id} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground/80">
-                  {h.cleric_name ?? "—"}
+                  {p.religion_name}
                 </td>
-                <td className="py-2 pr-4 text-foreground/80">
-                  {h.is_grand_priest ? "Grand prêtre" : "Prêtre"}
+                <td className="py-2 pr-4 text-foreground">
+                  {p.priest_name ?? "—"}
                 </td>
               </tr>
             ))}
