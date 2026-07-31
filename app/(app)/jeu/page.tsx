@@ -1,6 +1,6 @@
 "use client";
 
-import { Church, Hourglass, Search, Stamp, User, Users } from "lucide-react";
+import { Hourglass, Search, Stamp, User, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import RequireFeature from "@/components/require-feature";
@@ -14,20 +14,20 @@ import {
   type SablierSummary,
 } from "@/lib/religions";
 
-type Tab = "guildes" | "sceaux" | "personnages" | "croyances" | "titres";
+type Tab = "guildes" | "sceaux" | "personnages" | "croyances" | "sabliers";
 
 const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
   { key: "guildes", label: "Guildes", icon: Users },
   { key: "sceaux", label: "Sceaux", icon: Stamp },
   { key: "personnages", label: "Personnages", icon: User },
-  { key: "croyances", label: "Croyances", icon: Church },
-  { key: "titres", label: "Titres", icon: Hourglass },
+  { key: "sabliers", label: "Sabliers", icon: Hourglass },
 ];
 
 const inputClassName =
   "w-64 rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800";
 const rowClassName =
   "border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]";
+const linkClassName = "text-primary underline-offset-2 hover:underline";
 
 function SearchInput({
   value,
@@ -55,10 +55,15 @@ function SearchInput({
   );
 }
 
-function GuildesTab() {
+function GuildesTab({
+  query,
+  onQueryChange,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+}) {
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [query, setQuery] = useState("");
 
   useEffect(() => {
     listGuilds()
@@ -78,7 +83,7 @@ function GuildesTab() {
       <div className="mb-4 flex items-center justify-between">
         <SearchInput
           value={query}
-          onChange={setQuery}
+          onChange={onQueryChange}
           placeholder="Rechercher une guilde…"
         />
         <span className="text-sm text-foreground/60">
@@ -117,7 +122,7 @@ function GuildesTab() {
   );
 }
 
-function SceauxTab() {
+function SceauxTab({ onGuildClick }: { onGuildClick: (name: string) => void }) {
   const [seals, setSeals] = useState<GuildSeal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -160,7 +165,17 @@ function SceauxTab() {
             {visible.map((s) => (
               <tr key={s.external_id} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground">
-                  {s.guilds?.name ?? "—"}
+                  {s.guilds?.name ? (
+                    <button
+                      type="button"
+                      onClick={() => onGuildClick(s.guilds!.name)}
+                      className={linkClassName}
+                    >
+                      {s.guilds.name}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="py-2 pr-4 text-foreground/80">{s.seal_type}</td>
                 <td className="py-2 pr-4 text-foreground/80">{s.status}</td>
@@ -173,8 +188,15 @@ function SceauxTab() {
   );
 }
 
-function PersonnagesTab() {
-  const [query, setQuery] = useState("");
+function PersonnagesTab({
+  query,
+  onQueryChange,
+  onGuildClick,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  onGuildClick: (name: string) => void;
+}) {
   const [results, setResults] = useState<Character[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -206,7 +228,7 @@ function PersonnagesTab() {
       <div className="mb-4 flex items-center justify-between">
         <SearchInput
           value={query}
-          onChange={setQuery}
+          onChange={onQueryChange}
           placeholder="Rechercher un personnage ou un joueur…"
         />
         {hasSearched && (
@@ -241,7 +263,17 @@ function PersonnagesTab() {
                 <tr key={c.external_id} className={rowClassName}>
                   <td className="py-2 pr-4 text-foreground">{c.name}</td>
                   <td className="py-2 pr-4 text-foreground/80">
-                    {c.guilds?.name ?? "—"}
+                    {c.guilds?.name ? (
+                      <button
+                        type="button"
+                        onClick={() => onGuildClick(c.guilds!.name)}
+                        className={linkClassName}
+                      >
+                        {c.guilds.name}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-foreground/80">
                     {c.religion_name ?? "—"}
@@ -333,7 +365,11 @@ type SablierRow = {
   type: "Grand-Prêtre / Clerc" | "Prêtre";
 };
 
-function TitresTab() {
+function SabliersTab({
+  onCharacterClick,
+}: {
+  onCharacterClick: (name: string) => void;
+}) {
   const [summary, setSummary] = useState<SablierSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -429,10 +465,30 @@ function TitresTab() {
                   {r.religionName}
                 </td>
                 <td className="py-2 pr-4 text-foreground">
-                  {r.titulaire ?? "—"}
+                  {r.titulaire ? (
+                    <button
+                      type="button"
+                      onClick={() => onCharacterClick(r.titulaire!)}
+                      className={linkClassName}
+                    >
+                      {r.titulaire}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="py-2 pr-4 text-foreground/80">
-                  {r.clerc ?? "—"}
+                  {r.clerc ? (
+                    <button
+                      type="button"
+                      onClick={() => onCharacterClick(r.clerc!)}
+                      className={linkClassName}
+                    >
+                      {r.clerc}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="py-2 pr-4 text-foreground/80">{r.type}</td>
               </tr>
@@ -446,6 +502,18 @@ function TitresTab() {
 
 function JeuContent() {
   const [tab, setTab] = useState<Tab>("guildes");
+  const [guildQuery, setGuildQuery] = useState("");
+  const [characterQuery, setCharacterQuery] = useState("");
+
+  const goToGuild = (name: string) => {
+    setGuildQuery(name);
+    setTab("guildes");
+  };
+
+  const goToCharacter = (name: string) => {
+    setCharacterQuery(name);
+    setTab("personnages");
+  };
 
   return (
     <div>
@@ -476,11 +544,19 @@ function JeuContent() {
       </div>
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
-        {tab === "guildes" && <GuildesTab />}
-        {tab === "sceaux" && <SceauxTab />}
-        {tab === "personnages" && <PersonnagesTab />}
+        {tab === "guildes" && (
+          <GuildesTab query={guildQuery} onQueryChange={setGuildQuery} />
+        )}
+        {tab === "sceaux" && <SceauxTab onGuildClick={goToGuild} />}
+        {tab === "personnages" && (
+          <PersonnagesTab
+            query={characterQuery}
+            onQueryChange={setCharacterQuery}
+            onGuildClick={goToGuild}
+          />
+        )}
         {tab === "croyances" && <CroyancesTab />}
-        {tab === "titres" && <TitresTab />}
+        {tab === "sabliers" && <SabliersTab onCharacterClick={goToCharacter} />}
       </div>
     </div>
   );
