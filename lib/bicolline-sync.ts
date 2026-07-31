@@ -71,6 +71,27 @@ async function loginToBicollineAdmin(
   return jar;
 }
 
+async function fetchAllPages<T>(
+  jar: CookieJar,
+  path: string,
+  parse: (html: string) => T[],
+): Promise<T[]> {
+  const all: T[] = [];
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetch(`${BASE_URL}${path}?p=${page}`, {
+      headers: { cookie: cookieHeader(jar) },
+    });
+    if (!res.ok) break;
+    const html = await res.text();
+    const pageItems = parse(html);
+    if (pageItems.length === 0) break;
+    all.push(...pageItems);
+  }
+
+  return all;
+}
+
 type ScrapedGuild = {
   external_id: number;
   name: string;
@@ -79,12 +100,12 @@ type ScrapedGuild = {
   is_faction: boolean;
 };
 
-const ROW_PATTERN =
+const GUILD_ROW_PATTERN =
   /<tr><th class="field-name"><a href="\/admin\/Bicolline\/guild\/(\d+)\/change\/[^"]*">([^<]+)<\/a><\/th>[\s\S]*?<td class="field-member_count">(\d*)<\/td><td class="field-presence_count">(\d*)<\/td><td class="field-is_faction"><img[^>]*alt="(True|False)"/g;
 
 function parseGuildsFromHtml(html: string): ScrapedGuild[] {
   const guilds: ScrapedGuild[] = [];
-  for (const match of html.matchAll(ROW_PATTERN)) {
+  for (const match of html.matchAll(GUILD_ROW_PATTERN)) {
     guilds.push({
       external_id: parseInt(match[1], 10),
       name: match[2],
@@ -96,24 +117,40 @@ function parseGuildsFromHtml(html: string): ScrapedGuild[] {
   return guilds;
 }
 
-async function fetchAllGuilds(jar: CookieJar): Promise<ScrapedGuild[]> {
-  const all: ScrapedGuild[] = [];
+type ScrapedGuildSeal = {
+  external_id: number;
+  guildName: string;
+  seal_type: string;
+  status: string;
+};
 
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await fetch(`${BASE_URL}/admin/Bicolline/guild/?p=${page}`, {
-      headers: { cookie: cookieHeader(jar) },
+const GUILD_SEAL_ROW_PATTERN =
+  /<tr><th class="field-name"><a href="\/admin\/Bicolline\/guildseal\/(\d+)\/change\/[^"]*">[^<]*<\/a><\/th><td class="field-guild nowrap">([^<]+)<\/td><td class="field-seal nowrap">([^<]+)<\/td><td class="field-status nowrap">([^<]+)<\/td><\/tr>/g;
+
+function parseGuildSealsFromHtml(html: string): ScrapedGuildSeal[] {
+  const seals: ScrapedGuildSeal[] = [];
+  for (const match of html.matchAll(GUILD_SEAL_ROW_PATTERN)) {
+    seals.push({
+      external_id: parseInt(match[1], 10),
+      guildName: match[2],
+      seal_type: match[3],
+      status: match[4],
     });
-    if (!res.ok) break;
-    const html = await res.text();
-    const pageGuilds = parseGuildsFromHtml(html);
-    if (pageGuilds.length === 0) break;
-    all.push(...pageGuilds);
   }
-
-  return all;
+  return seals;
 }
 
-export async function syncGuilds(): Promise<{ synced: number }> {
+function dedupeByExternalId<T extends { external_id: number }>(
+  items: T[],
+): T[] {
+  return [...new Map(items.map((item) => [item.external_id, item])).values()];
+}
+
+export async function syncGuilds(): Promise<{
+  guildsSynced: number;
+  sealsSynced: number;
+  sealsSkipped: number;
+}> {
   const email = process.env.BICOLLINE_ADMIN_EMAIL;
   const password = process.env.BICOLLINE_ADMIN_PASSWORD;
   if (!email || !password) {
@@ -123,22 +160,69 @@ export async function syncGuilds(): Promise<{ synced: number }> {
   }
 
   const jar = await loginToBicollineAdmin(email, password);
-  const scraped = await fetchAllGuilds(jar);
-  if (scraped.length === 0) {
+  const admin = createAdminClient();
+
+  const scrapedGuilds = await fetchAllPages(
+    jar,
+    "/admin/Bicolline/guild/",
+    parseGuildsFromHtml,
+  );
+  if (scrapedGuilds.length === 0) {
     throw new Error(
       "Aucune guilde trouvée — la structure de la page a peut-être changé.",
     );
   }
+  const guilds = dedupeByExternalId(scrapedGuilds);
 
-  const byExternalId = new Map(scraped.map((g) => [g.external_id, g]));
-  const guilds = [...byExternalId.values()];
-
-  const admin = createAdminClient();
-  const { error } = await admin.from("guilds").upsert(
+  const { error: guildsError } = await admin.from("guilds").upsert(
     guilds.map((g) => ({ ...g, synced_at: new Date().toISOString() })),
     { onConflict: "external_id" },
   );
-  if (error) throw error;
+  if (guildsError) throw guildsError;
 
-  return { synced: guilds.length };
+  const guildIdByName = new Map(guilds.map((g) => [g.name, g.external_id]));
+
+  const scrapedSeals = await fetchAllPages(
+    jar,
+    "/admin/Bicolline/guildseal/",
+    parseGuildSealsFromHtml,
+  );
+  const seals = dedupeByExternalId(scrapedSeals);
+
+  const sealRows: {
+    external_id: number;
+    guild_id: number;
+    seal_type: string;
+    status: string;
+    synced_at: string;
+  }[] = [];
+  let sealsSkipped = 0;
+
+  for (const seal of seals) {
+    const guildId = guildIdByName.get(seal.guildName);
+    if (guildId === undefined) {
+      sealsSkipped += 1;
+      continue;
+    }
+    sealRows.push({
+      external_id: seal.external_id,
+      guild_id: guildId,
+      seal_type: seal.seal_type,
+      status: seal.status,
+      synced_at: new Date().toISOString(),
+    });
+  }
+
+  if (sealRows.length > 0) {
+    const { error: sealsError } = await admin
+      .from("guild_seals")
+      .upsert(sealRows, { onConflict: "external_id" });
+    if (sealsError) throw sealsError;
+  }
+
+  return {
+    guildsSynced: guilds.length,
+    sealsSynced: sealRows.length,
+    sealsSkipped,
+  };
 }
