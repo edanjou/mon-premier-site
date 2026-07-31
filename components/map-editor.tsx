@@ -1,7 +1,6 @@
 "use client";
 
 import Konva from "konva";
-import Image from "next/image";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
   Archive,
@@ -35,7 +34,6 @@ import {
   Transformer,
 } from "react-konva";
 import useImage from "use-image";
-import { gadevox } from "@/app/fonts/gadevox";
 import {
   deleteFolder,
   deleteMedia,
@@ -1839,22 +1837,7 @@ export default function MapEditor() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center gap-6 bg-zinc-50 px-6 py-10 font-sans dark:bg-black">
-      <div className="flex items-center gap-4">
-        <Image
-          src="/bicolline.svg"
-          alt="Logo Bicolline"
-          width={60}
-          height={60}
-          className="h-[60px] w-[60px]"
-        />
-        <h1
-          className={`${gadevox.className} text-[40pt] font-semibold text-black dark:text-zinc-50`}
-        >
-          Éditeur de carte
-        </h1>
-      </div>
-
+    <div className="flex min-h-screen flex-col items-center gap-6 bg-zinc-50 px-6 py-4 font-sans dark:bg-black">
       <div className="flex flex-wrap items-center justify-center gap-4">
         <div ref={uploadMenuRef} className="relative">
           <button
