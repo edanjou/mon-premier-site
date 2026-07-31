@@ -1837,7 +1837,7 @@ export default function MapEditor() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center gap-6 bg-zinc-50 px-6 py-4 font-sans dark:bg-black">
+    <div className="flex flex-1 flex-col items-center gap-6 bg-background px-6 py-4 font-sans">
       <div className="flex flex-wrap items-center justify-center gap-4">
         <div ref={uploadMenuRef} className="relative">
           <button

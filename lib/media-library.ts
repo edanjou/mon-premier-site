@@ -76,10 +76,19 @@ export async function uploadMedia(file: File, folder = ""): Promise<MediaFile> {
   if (error) throw error;
 
   const url = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-  return { type: "file", name: filename, path, url, createdAt: new Date().toISOString() };
+  return {
+    type: "file",
+    name: filename,
+    path,
+    url,
+    createdAt: new Date().toISOString(),
+  };
 }
 
-export async function uploadZipAsFolder(zipFile: File, folderName: string): Promise<MediaFile[]> {
+export async function uploadZipAsFolder(
+  zipFile: File,
+  folderName: string,
+): Promise<MediaFile[]> {
   const buffer = new Uint8Array(await zipFile.arrayBuffer());
   const entries = unzipSync(buffer);
   const folder = sanitizeSegment(folderName);
@@ -92,7 +101,12 @@ export async function uploadZipAsFolder(zipFile: File, folderName: string): Prom
       if (!IMAGE_EXTENSIONS.has(ext)) return null;
 
       const path = joinPath(folder, baseName);
-      const mimeType = ext === "jpg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext}`;
+      const mimeType =
+        ext === "jpg"
+          ? "image/jpeg"
+          : ext === "svg"
+            ? "image/svg+xml"
+            : `image/${ext}`;
       const blob = new Blob([new Uint8Array(content)], { type: mimeType });
 
       const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
@@ -101,8 +115,15 @@ export async function uploadZipAsFolder(zipFile: File, folderName: string): Prom
       });
       if (error) throw error;
 
-      const url = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-      return { type: "file" as const, name: baseName, path, url, createdAt: new Date().toISOString() };
+      const url = supabase.storage.from(BUCKET).getPublicUrl(path)
+        .data.publicUrl;
+      return {
+        type: "file" as const,
+        name: baseName,
+        path,
+        url,
+        createdAt: new Date().toISOString(),
+      };
     },
   );
 
@@ -111,7 +132,9 @@ export async function uploadZipAsFolder(zipFile: File, folderName: string): Prom
   );
 
   if (results.length === 0) {
-    throw new Error("Aucune image (png, jpg, gif, webp, svg) trouvée dans ce fichier .zip.");
+    throw new Error(
+      "Aucune image (png, jpg, gif, webp, svg) trouvée dans ce fichier .zip.",
+    );
   }
 
   return results;
@@ -131,7 +154,9 @@ export async function deleteFolder(path: string): Promise<void> {
     .map((item) => joinPath(path, item.name));
 
   if (paths.length > 0) {
-    const { error: removeError } = await supabase.storage.from(BUCKET).remove(paths);
+    const { error: removeError } = await supabase.storage
+      .from(BUCKET)
+      .remove(paths);
     if (removeError) throw removeError;
   }
 }
