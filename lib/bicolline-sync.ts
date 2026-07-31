@@ -4,6 +4,16 @@ import { createAdminClient } from "@/lib/supabase-admin";
 const BASE_URL = "https://bicolline.online";
 const MAX_PAGES = 50;
 
+const GUILD_SYNC_FREQUENCY_KEY = "guild_sync_frequency";
+const GUILD_LAST_SYNCED_KEY = "guild_last_synced_at";
+
+const FREQUENCY_INTERVAL_MS: Record<string, number> = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+  biweekly: 14 * 24 * 60 * 60 * 1000,
+  monthly: 30 * 24 * 60 * 60 * 1000,
+};
+
 type CookieJar = Map<string, string>;
 
 function cookieHeader(jar: CookieJar): string {
@@ -146,7 +156,8 @@ function dedupeByExternalId<T extends { external_id: number }>(
   return [...new Map(items.map((item) => [item.external_id, item])).values()];
 }
 
-export async function syncGuilds(): Promise<{
+export async function syncGuilds(options?: { force?: boolean }): Promise<{
+  skipped: boolean;
   guildsSynced: number;
   sealsSynced: number;
   sealsSkipped: number;
@@ -159,8 +170,37 @@ export async function syncGuilds(): Promise<{
     );
   }
 
-  const jar = await loginToBicollineAdmin(email, password);
   const admin = createAdminClient();
+
+  if (!options?.force) {
+    const { data: settingsRows } = await admin
+      .from("app_settings")
+      .select("key, value")
+      .in("key", [GUILD_SYNC_FREQUENCY_KEY, GUILD_LAST_SYNCED_KEY]);
+
+    const frequency =
+      settingsRows?.find((r) => r.key === GUILD_SYNC_FREQUENCY_KEY)?.value ??
+      "weekly";
+    const lastSyncedAt = settingsRows?.find(
+      (r) => r.key === GUILD_LAST_SYNCED_KEY,
+    )?.value;
+    const intervalMs =
+      FREQUENCY_INTERVAL_MS[frequency] ?? FREQUENCY_INTERVAL_MS.weekly;
+
+    if (lastSyncedAt) {
+      const elapsed = Date.now() - new Date(lastSyncedAt).getTime();
+      if (elapsed < intervalMs) {
+        return {
+          skipped: true,
+          guildsSynced: 0,
+          sealsSynced: 0,
+          sealsSkipped: 0,
+        };
+      }
+    }
+  }
+
+  const jar = await loginToBicollineAdmin(email, password);
 
   const scrapedGuilds = await fetchAllPages(
     jar,
@@ -220,7 +260,14 @@ export async function syncGuilds(): Promise<{
     if (sealsError) throw sealsError;
   }
 
+  await admin.from("app_settings").upsert({
+    key: GUILD_LAST_SYNCED_KEY,
+    value: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
   return {
+    skipped: false,
     guildsSynced: guilds.length,
     sealsSynced: sealRows.length,
     sealsSkipped,
