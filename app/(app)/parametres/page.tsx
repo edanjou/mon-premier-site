@@ -10,6 +10,12 @@ import {
   type GuildSyncFrequency,
 } from "@/lib/app-settings";
 import { getOwnProfile } from "@/lib/profile";
+import { supabase } from "@/lib/supabase";
+
+async function getAuthToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
 
 function formatSyncDate(dateStr: string | null): string {
   if (!dateStr) return "Jamais";
@@ -27,6 +33,7 @@ function GuildSyncSettings() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +63,32 @@ function GuildSyncSettings() {
     }
   };
 
+  const handleSyncNow = async () => {
+    setError(null);
+    setMessage(null);
+    setIsSyncing(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch("/api/admin/sync-guilds", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Échec de la synchronisation.");
+        return;
+      }
+      setLastSyncedAt(await getGuildLastSyncedAt());
+      setMessage(
+        `${data.guildsSynced} guildes et ${data.sealsSynced} sceaux synchronisés.`,
+      );
+    } catch {
+      setError("Échec de la synchronisation.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
       <h2 className="font-semibold text-foreground">
@@ -82,6 +115,14 @@ function GuildSyncSettings() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={handleSyncNow}
+            disabled={isSyncing}
+            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSyncing ? "Synchronisation…" : "Synchroniser"}
+          </button>
           <span className="text-sm text-foreground/60">
             Dernière synchronisation : {formatSyncDate(lastSyncedAt)}
           </span>
