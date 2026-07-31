@@ -7,6 +7,12 @@ import RequireFeature from "@/components/require-feature";
 import { searchCharacters, type Character } from "@/lib/characters";
 import { listGuilds, type Guild } from "@/lib/guilds";
 import { listGuildSeals, type GuildSeal } from "@/lib/guild-seals";
+import {
+  listReligions,
+  listTitleHolders,
+  type Religion,
+  type TitleHolder,
+} from "@/lib/religions";
 
 type Tab = "guildes" | "sceaux" | "personnages" | "croyances" | "titres";
 
@@ -263,6 +269,126 @@ function PersonnagesTab() {
   );
 }
 
+function CroyancesTab() {
+  const [religions, setReligions] = useState<Religion[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    listReligions()
+      .then(setReligions)
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const visible = religions.filter((r) =>
+    r.name.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  if (isLoading)
+    return <p className="text-sm text-foreground/60">Chargement…</p>;
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Rechercher une croyance…"
+        />
+        <span className="text-sm text-foreground/60">
+          {visible.length} / {religions.length} croyances
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[400px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+              <th className="py-2 pr-4 font-medium">Nom</th>
+              <th className="py-2 pr-4 font-medium">Fidèles</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((r) => (
+              <tr key={r.name} className={rowClassName}>
+                <td className="py-2 pr-4 text-foreground">{r.name}</td>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {r.memberCount}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TitresTab() {
+  const [holders, setHolders] = useState<TitleHolder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    listTitleHolders()
+      .then(setHolders)
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const visible = holders.filter(
+    (h) =>
+      (h.character_name ?? "").toLowerCase().includes(query.toLowerCase()) ||
+      h.religion_name.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  if (isLoading)
+    return <p className="text-sm text-foreground/60">Chargement…</p>;
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Rechercher un personnage ou une croyance…"
+        />
+        <span className="text-sm text-foreground/60">
+          {visible.length} / {holders.length} titres
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+              <th className="py-2 pr-4 font-medium">Personnage</th>
+              <th className="py-2 pr-4 font-medium">Croyance</th>
+              <th className="py-2 pr-4 font-medium">Clerc</th>
+              <th className="py-2 pr-4 font-medium">Titre</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((h) => (
+              <tr key={h.external_id} className={rowClassName}>
+                <td className="py-2 pr-4 text-foreground">
+                  {h.character_name ?? "—"}
+                </td>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {h.religion_name}
+                </td>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {h.cleric_name ?? "—"}
+                </td>
+                <td className="py-2 pr-4 text-foreground/80">
+                  {h.is_grand_priest ? "Grand prêtre" : "Prêtre"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function JeuContent() {
   const [tab, setTab] = useState<Tab>("guildes");
 
@@ -294,12 +420,8 @@ function JeuContent() {
         {tab === "guildes" && <GuildesTab />}
         {tab === "sceaux" && <SceauxTab />}
         {tab === "personnages" && <PersonnagesTab />}
-        {tab === "croyances" && (
-          <p className="text-sm text-foreground/60">À venir.</p>
-        )}
-        {tab === "titres" && (
-          <p className="text-sm text-foreground/60">À venir.</p>
-        )}
+        {tab === "croyances" && <CroyancesTab />}
+        {tab === "titres" && <TitresTab />}
       </div>
     </div>
   );

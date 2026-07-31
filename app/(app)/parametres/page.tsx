@@ -6,6 +6,7 @@ import {
   getCharacterLastSyncedAt,
   getGuildLastSyncedAt,
   getGuildSyncFrequency,
+  getReligionMemberLastSyncedAt,
   GUILD_SYNC_FREQUENCIES,
   setGuildSyncFrequency,
   type GuildSyncFrequency,
@@ -142,7 +143,21 @@ function GuildSyncSettings() {
   );
 }
 
-function CharacterSyncSettings() {
+function ChunkedSyncSettings({
+  title,
+  description,
+  endpoint,
+  resultKey,
+  unitLabel,
+  getLastSyncedAt,
+}: {
+  title: string;
+  description: string;
+  endpoint: string;
+  resultKey: string;
+  unitLabel: string;
+  getLastSyncedAt: () => Promise<string | null>;
+}) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -151,18 +166,18 @@ function CharacterSyncSettings() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getCharacterLastSyncedAt().then((lastSynced) => {
+    getLastSyncedAt().then((lastSynced) => {
       setLastSyncedAt(lastSynced);
       setIsLoading(false);
     });
-  }, []);
+  }, [getLastSyncedAt]);
 
   const handleSyncNow = async () => {
     setError(null);
     setMessage(null);
     setIsSyncing(true);
 
-    let totalCharacters = 0;
+    let total = 0;
     let totalPages = 0;
 
     try {
@@ -170,7 +185,7 @@ function CharacterSyncSettings() {
       let done = false;
 
       while (!done) {
-        const res = await fetch("/api/admin/sync-characters", {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -180,16 +195,16 @@ function CharacterSyncSettings() {
           return;
         }
 
-        totalCharacters += data.charactersSynced;
+        total += data[resultKey];
         totalPages += data.pagesProcessed;
         done = data.done;
         setProgress(
-          `${totalPages} pages traitées, ${totalCharacters} personnages synchronisés…`,
+          `${totalPages} pages traitées, ${total} ${unitLabel} synchronisés…`,
         );
       }
 
-      setLastSyncedAt(await getCharacterLastSyncedAt());
-      setMessage(`${totalCharacters} personnages synchronisés.`);
+      setLastSyncedAt(await getLastSyncedAt());
+      setMessage(`${total} ${unitLabel} synchronisés.`);
     } catch {
       setError("Échec de la synchronisation.");
     } finally {
@@ -200,14 +215,8 @@ function CharacterSyncSettings() {
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
-      <h2 className="font-semibold text-foreground">
-        Synchronisation des personnages
-      </h2>
-      <p className="mt-1 text-sm text-foreground/60">
-        Nom, guilde, croyance, statut PNJ, ainsi que le nom et l&apos;email du
-        joueur associé, depuis bicolline.online. Plusieurs centaines de pages —
-        la synchronisation peut prendre quelques minutes.
-      </p>
+      <h2 className="font-semibold text-foreground">{title}</h2>
+      <p className="mt-1 text-sm text-foreground/60">{description}</p>
 
       {isLoading ? (
         <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
@@ -258,7 +267,22 @@ export default function ParametresPage() {
       {isAdmin ? (
         <div className="mt-8 flex flex-col gap-6">
           <GuildSyncSettings />
-          <CharacterSyncSettings />
+          <ChunkedSyncSettings
+            title="Synchronisation des personnages"
+            description="Nom, guilde, croyance, statut PNJ, ainsi que le nom et l'email du joueur associé, depuis bicolline.online. Plusieurs centaines de pages — la synchronisation peut prendre quelques minutes."
+            endpoint="/api/admin/sync-characters"
+            resultKey="charactersSynced"
+            unitLabel="personnages"
+            getLastSyncedAt={getCharacterLastSyncedAt}
+          />
+          <ChunkedSyncSettings
+            title="Synchronisation des croyances et titres"
+            description="Croyance, clerc, prêtre et grand prêtre par personnage, depuis bicolline.online. Plusieurs centaines de pages — la synchronisation peut prendre quelques minutes."
+            endpoint="/api/admin/sync-religion-members"
+            resultKey="membersSynced"
+            unitLabel="entrées"
+            getLastSyncedAt={getReligionMemberLastSyncedAt}
+          />
         </div>
       ) : (
         <p className="mt-2 text-foreground/70">À venir.</p>

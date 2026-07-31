@@ -1,5 +1,14 @@
 import { supabase } from "@/lib/supabase";
 
+async function getAppSettingValue(key: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  return data?.value ?? null;
+}
+
 export const GUILD_SYNC_FREQUENCIES = [
   { value: "daily", label: "Quotidienne" },
   { value: "weekly", label: "Hebdomadaire" },
@@ -12,14 +21,12 @@ export type GuildSyncFrequency =
 
 const GUILD_SYNC_FREQUENCY_KEY = "guild_sync_frequency";
 const GUILD_LAST_SYNCED_KEY = "guild_last_synced_at";
+const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
+const RELIGION_MEMBER_LAST_SYNCED_KEY = "religion_member_sync_last_synced_at";
 
 export async function getGuildSyncFrequency(): Promise<GuildSyncFrequency> {
-  const { data } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", GUILD_SYNC_FREQUENCY_KEY)
-    .maybeSingle();
-  return (data?.value as GuildSyncFrequency | undefined) ?? "weekly";
+  const value = await getAppSettingValue(GUILD_SYNC_FREQUENCY_KEY);
+  return (value as GuildSyncFrequency | null) ?? "weekly";
 }
 
 export async function setGuildSyncFrequency(
@@ -33,22 +40,14 @@ export async function setGuildSyncFrequency(
   if (error) throw error;
 }
 
-export async function getGuildLastSyncedAt(): Promise<string | null> {
-  const { data } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", GUILD_LAST_SYNCED_KEY)
-    .maybeSingle();
-  return data?.value ?? null;
+export function getGuildLastSyncedAt(): Promise<string | null> {
+  return getAppSettingValue(GUILD_LAST_SYNCED_KEY);
 }
 
-const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
+export function getCharacterLastSyncedAt(): Promise<string | null> {
+  return getAppSettingValue(CHARACTER_LAST_SYNCED_KEY);
+}
 
-export async function getCharacterLastSyncedAt(): Promise<string | null> {
-  const { data } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", CHARACTER_LAST_SYNCED_KEY)
-    .maybeSingle();
-  return data?.value ?? null;
+export function getReligionMemberLastSyncedAt(): Promise<string | null> {
+  return getAppSettingValue(RELIGION_MEMBER_LAST_SYNCED_KEY);
 }
