@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Award, Church, Search, Stamp, User, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import RequireFeature from "@/components/require-feature";
@@ -16,12 +16,12 @@ import {
 
 type Tab = "guildes" | "sceaux" | "personnages" | "croyances" | "titres";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "guildes", label: "Guildes" },
-  { key: "sceaux", label: "Sceaux" },
-  { key: "personnages", label: "Personnages" },
-  { key: "croyances", label: "Croyances" },
-  { key: "titres", label: "Titres" },
+const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
+  { key: "guildes", label: "Guildes", icon: Users },
+  { key: "sceaux", label: "Sceaux", icon: Stamp },
+  { key: "personnages", label: "Personnages", icon: User },
+  { key: "croyances", label: "Croyances", icon: Church },
+  { key: "titres", label: "Titres", icon: Award },
 ];
 
 const inputClassName =
@@ -455,20 +455,24 @@ function JeuContent() {
       </p>
 
       <div className="mt-6 flex gap-2 border-b border-black/[.08] dark:border-white/[.08]">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? "border-b-2 border-primary text-primary"
-                : "text-foreground/60 hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+                tab === t.key
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              <Icon size={16} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
