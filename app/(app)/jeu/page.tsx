@@ -365,24 +365,42 @@ type SablierRow = {
   type: "Grand-Prêtre / Clerc" | "Prêtre";
 };
 
+function SablierStats({ summary }: { summary: SablierSummary }) {
+  return (
+    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
+        <p className="text-sm text-foreground/60">Total des sabliers</p>
+        <p className="mt-1 text-3xl font-semibold text-foreground">
+          {summary.total}
+        </p>
+      </div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
+        <p className="text-sm text-foreground/60">
+          Partagés (Grand-Prêtre / Clerc)
+        </p>
+        <p className="mt-1 text-3xl font-semibold text-foreground">
+          {summary.sharedPairs.length}
+        </p>
+      </div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
+        <p className="text-sm text-foreground/60">Individuels (Prêtre)</p>
+        <p className="mt-1 text-3xl font-semibold text-foreground">
+          {summary.individualPriests.length}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SabliersTab({
+  summary,
   onCharacterClick,
 }: {
+  summary: SablierSummary;
   onCharacterClick: (name: string) => void;
 }) {
-  const [summary, setSummary] = useState<SablierSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SablierFilter>("tous");
-
-  useEffect(() => {
-    getSablierSummary()
-      .then(setSummary)
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  if (isLoading || !summary)
-    return <p className="text-sm text-foreground/60">Chargement…</p>;
 
   const q = query.toLowerCase();
 
@@ -504,6 +522,9 @@ function JeuContent() {
   const [tab, setTab] = useState<Tab>("guildes");
   const [guildQuery, setGuildQuery] = useState("");
   const [characterQuery, setCharacterQuery] = useState("");
+  const [sablierSummary, setSablierSummary] = useState<SablierSummary | null>(
+    null,
+  );
 
   const goToGuild = (name: string) => {
     setGuildQuery(name);
@@ -515,12 +536,24 @@ function JeuContent() {
     setTab("personnages");
   };
 
+  useEffect(() => {
+    if (tab === "sabliers" && !sablierSummary) {
+      getSablierSummary().then(setSablierSummary);
+    }
+  }, [tab, sablierSummary]);
+
   return (
     <div>
       <h1 className={`${glofters.className} text-3xl text-foreground`}>Jeu</h1>
       <p className="mt-2 text-foreground/70">
         Guildes, sceaux et personnages synchronisés depuis bicolline.online.
       </p>
+
+      {tab === "sabliers" && sablierSummary && (
+        <div className="mt-6">
+          <SablierStats summary={sablierSummary} />
+        </div>
+      )}
 
       <div className="mt-6 flex gap-2 border-b border-black/[.08] dark:border-white/[.08]">
         {TABS.map((t) => {
@@ -556,7 +589,15 @@ function JeuContent() {
           />
         )}
         {tab === "croyances" && <CroyancesTab />}
-        {tab === "sabliers" && <SabliersTab onCharacterClick={goToCharacter} />}
+        {tab === "sabliers" &&
+          (sablierSummary ? (
+            <SabliersTab
+              summary={sablierSummary}
+              onCharacterClick={goToCharacter}
+            />
+          ) : (
+            <p className="text-sm text-foreground/60">Chargement…</p>
+          ))}
       </div>
     </div>
   );
