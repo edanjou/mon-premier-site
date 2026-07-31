@@ -365,29 +365,46 @@ type SablierRow = {
   type: "Grand-Prêtre / Clerc" | "Prêtre";
 };
 
+function SablierStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Hourglass;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div
+      title={label}
+      className="flex items-center gap-3 rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900"
+    >
+      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
+        <Icon size={20} />
+      </div>
+      <p className="text-3xl font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
 function SablierStats({ summary }: { summary: SablierSummary }) {
   return (
     <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
-        <p className="text-sm text-foreground/60">Total des sabliers</p>
-        <p className="mt-1 text-3xl font-semibold text-foreground">
-          {summary.total}
-        </p>
-      </div>
-      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
-        <p className="text-sm text-foreground/60">
-          Partagés (Grand-Prêtre / Clerc)
-        </p>
-        <p className="mt-1 text-3xl font-semibold text-foreground">
-          {summary.sharedPairs.length}
-        </p>
-      </div>
-      <div className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
-        <p className="text-sm text-foreground/60">Individuels (Prêtre)</p>
-        <p className="mt-1 text-3xl font-semibold text-foreground">
-          {summary.individualPriests.length}
-        </p>
-      </div>
+      <SablierStat
+        icon={Hourglass}
+        label="Total des sabliers"
+        value={summary.total}
+      />
+      <SablierStat
+        icon={Users}
+        label="Partagés (Grand-Prêtre / Clerc)"
+        value={summary.sharedPairs.length}
+      />
+      <SablierStat
+        icon={User}
+        label="Individuels (Prêtre)"
+        value={summary.individualPriests.length}
+      />
     </div>
   );
 }
