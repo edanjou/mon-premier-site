@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import {
+  getCharacterLastSyncedAt,
   getGuildLastSyncedAt,
   getGuildSyncFrequency,
   GUILD_SYNC_FREQUENCIES,
@@ -141,6 +142,106 @@ function GuildSyncSettings() {
   );
 }
 
+function CharacterSyncSettings() {
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCharacterLastSyncedAt().then((lastSynced) => {
+      setLastSyncedAt(lastSynced);
+      setIsLoading(false);
+    });
+  }, []);
+
+  const handleSyncNow = async () => {
+    setError(null);
+    setMessage(null);
+    setIsSyncing(true);
+
+    let totalCharacters = 0;
+    let totalPages = 0;
+
+    try {
+      const token = await getAuthToken();
+      let done = false;
+
+      while (!done) {
+        const res = await fetch("/api/admin/sync-characters", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Échec de la synchronisation.");
+          return;
+        }
+
+        totalCharacters += data.charactersSynced;
+        totalPages += data.pagesProcessed;
+        done = data.done;
+        setProgress(
+          `${totalPages} pages traitées, ${totalCharacters} personnages synchronisés…`,
+        );
+      }
+
+      setLastSyncedAt(await getCharacterLastSyncedAt());
+      setMessage(`${totalCharacters} personnages synchronisés.`);
+    } catch {
+      setError("Échec de la synchronisation.");
+    } finally {
+      setProgress(null);
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <h2 className="font-semibold text-foreground">
+        Synchronisation des personnages
+      </h2>
+      <p className="mt-1 text-sm text-foreground/60">
+        Nom, guilde, croyance, statut PNJ, ainsi que le nom et l&apos;email du
+        joueur associé, depuis bicolline.online. Plusieurs centaines de pages —
+        la synchronisation peut prendre quelques minutes.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSyncNow}
+            disabled={isSyncing}
+            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSyncing ? "Synchronisation…" : "Synchroniser"}
+          </button>
+          <span className="text-sm text-foreground/60">
+            Dernière synchronisation : {formatSyncDate(lastSyncedAt)}
+          </span>
+        </div>
+      )}
+
+      {progress && (
+        <p className="mt-2 text-sm text-foreground/60">{progress}</p>
+      )}
+      {message && (
+        <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
 export default function ParametresPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -155,8 +256,9 @@ export default function ParametresPage() {
       </h1>
 
       {isAdmin ? (
-        <div className="mt-8">
+        <div className="mt-8 flex flex-col gap-6">
           <GuildSyncSettings />
+          <CharacterSyncSettings />
         </div>
       ) : (
         <p className="mt-2 text-foreground/70">À venir.</p>

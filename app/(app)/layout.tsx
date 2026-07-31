@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Castle,
   Crown,
+  Dices,
   Hammer,
   LogOut,
   Scroll,
@@ -43,6 +44,7 @@ type NavItem = {
 const ALL_MODULE_ITEMS: NavItem[] = [
   { href: "/editeur-carte", label: "Éditeur de carte", icon: Scroll },
   { href: "/activites", label: "Activités", icon: Swords },
+  { href: "/jeu", label: "Jeu", icon: Dices },
   { href: "/utilisateurs", label: "Utilisateurs", icon: Crown },
 ];
 

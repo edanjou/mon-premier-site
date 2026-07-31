@@ -1,8 +1,11 @@
 import "server-only";
+import {
+  decodeHtmlEntities,
+  dedupeByExternalId,
+  fetchAllPages,
+  loginToBicollineAdmin,
+} from "@/lib/bicolline-client";
 import { createAdminClient } from "@/lib/supabase-admin";
-
-const BASE_URL = "https://bicolline.online";
-const MAX_PAGES = 50;
 
 const GUILD_SYNC_FREQUENCY_KEY = "guild_sync_frequency";
 const GUILD_LAST_SYNCED_KEY = "guild_last_synced_at";
@@ -13,94 +16,6 @@ const FREQUENCY_INTERVAL_MS: Record<string, number> = {
   biweekly: 14 * 24 * 60 * 60 * 1000,
   monthly: 30 * 24 * 60 * 60 * 1000,
 };
-
-type CookieJar = Map<string, string>;
-
-function cookieHeader(jar: CookieJar): string {
-  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
-}
-
-function storeCookies(jar: CookieJar, res: Response) {
-  for (const raw of res.headers.getSetCookie()) {
-    const [pair] = raw.split(";");
-    const separatorIndex = pair.indexOf("=");
-    if (separatorIndex === -1) continue;
-    jar.set(
-      pair.slice(0, separatorIndex).trim(),
-      pair.slice(separatorIndex + 1).trim(),
-    );
-  }
-}
-
-async function loginToBicollineAdmin(
-  email: string,
-  password: string,
-): Promise<CookieJar> {
-  const jar: CookieJar = new Map();
-
-  const loginPageRes = await fetch(`${BASE_URL}/admin/login/`, {
-    headers: { cookie: cookieHeader(jar) },
-  });
-  storeCookies(jar, loginPageRes);
-  const loginPageHtml = await loginPageRes.text();
-
-  const csrfMatch = loginPageHtml.match(
-    /name="csrfmiddlewaretoken" value="([^"]+)"/,
-  );
-  if (!csrfMatch) {
-    throw new Error(
-      "Impossible de trouver le jeton CSRF sur la page de connexion.",
-    );
-  }
-
-  const body = new URLSearchParams({
-    csrfmiddlewaretoken: csrfMatch[1],
-    username: email,
-    password,
-    next: "/admin/",
-  });
-
-  const loginRes = await fetch(`${BASE_URL}/admin/login/`, {
-    method: "POST",
-    redirect: "manual",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      referer: `${BASE_URL}/admin/login/`,
-      cookie: cookieHeader(jar),
-    },
-    body: body.toString(),
-  });
-  storeCookies(jar, loginRes);
-
-  if (loginRes.status !== 302) {
-    throw new Error(
-      `Échec de la connexion à l'admin Bicolline (statut ${loginRes.status}).`,
-    );
-  }
-
-  return jar;
-}
-
-async function fetchAllPages<T>(
-  jar: CookieJar,
-  path: string,
-  parse: (html: string) => T[],
-): Promise<T[]> {
-  const all: T[] = [];
-
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await fetch(`${BASE_URL}${path}?p=${page}`, {
-      headers: { cookie: cookieHeader(jar) },
-    });
-    if (!res.ok) break;
-    const html = await res.text();
-    const pageItems = parse(html);
-    if (pageItems.length === 0) break;
-    all.push(...pageItems);
-  }
-
-  return all;
-}
 
 type ScrapedGuild = {
   external_id: number;
@@ -118,7 +33,7 @@ function parseGuildsFromHtml(html: string): ScrapedGuild[] {
   for (const match of html.matchAll(GUILD_ROW_PATTERN)) {
     guilds.push({
       external_id: parseInt(match[1], 10),
-      name: match[2],
+      name: decodeHtmlEntities(match[2]),
       member_count: match[3] ? parseInt(match[3], 10) : null,
       presence_count: match[4] ? parseInt(match[4], 10) : null,
       is_faction: match[5] === "True",
@@ -142,18 +57,12 @@ function parseGuildSealsFromHtml(html: string): ScrapedGuildSeal[] {
   for (const match of html.matchAll(GUILD_SEAL_ROW_PATTERN)) {
     seals.push({
       external_id: parseInt(match[1], 10),
-      guildName: match[2],
+      guildName: decodeHtmlEntities(match[2]),
       seal_type: match[3],
       status: match[4],
     });
   }
   return seals;
-}
-
-function dedupeByExternalId<T extends { external_id: number }>(
-  items: T[],
-): T[] {
-  return [...new Map(items.map((item) => [item.external_id, item])).values()];
 }
 
 export async function syncGuilds(options?: { force?: boolean }): Promise<{

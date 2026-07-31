@@ -17,7 +17,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Crown, Scroll, Swords } from "lucide-react";
+import { Crown, Dices, Scroll, Swords } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
@@ -34,6 +34,7 @@ type ModuleItem = {
 const ALL_MODULES: ModuleItem[] = [
   { href: "/editeur-carte", label: "Éditeur de carte", icon: Scroll },
   { href: "/activites", label: "Activités", icon: Swords },
+  { href: "/jeu", label: "Jeu", icon: Dices },
   { href: "/utilisateurs", label: "Utilisateurs", icon: Crown },
 ];
 

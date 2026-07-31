@@ -41,3 +41,14 @@ export async function getGuildLastSyncedAt(): Promise<string | null> {
     .maybeSingle();
   return data?.value ?? null;
 }
+
+const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
+
+export async function getCharacterLastSyncedAt(): Promise<string | null> {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", CHARACTER_LAST_SYNCED_KEY)
+    .maybeSingle();
+  return data?.value ?? null;
+}
