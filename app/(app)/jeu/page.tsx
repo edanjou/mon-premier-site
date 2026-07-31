@@ -1,6 +1,6 @@
 "use client";
 
-import { Award, Church, Search, Stamp, User, Users } from "lucide-react";
+import { Church, Hourglass, Search, Stamp, User, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import RequireFeature from "@/components/require-feature";
@@ -21,7 +21,7 @@ const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
   { key: "sceaux", label: "Sceaux", icon: Stamp },
   { key: "personnages", label: "Personnages", icon: User },
   { key: "croyances", label: "Croyances", icon: Church },
-  { key: "titres", label: "Titres", icon: Award },
+  { key: "titres", label: "Titres", icon: Hourglass },
 ];
 
 const inputClassName =
