@@ -4,9 +4,11 @@ import {
   ChevronDown,
   ChevronUp,
   Feather,
+  Flag,
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
@@ -17,6 +19,17 @@ import {
   type Activity,
   type ActivityInput,
 } from "@/lib/activities";
+import {
+  FRONT_COLOR_STYLES,
+  FRONT_COLORS,
+  getActivityFrontAssignments,
+  maxOrganizersFor,
+  saveActivityFrontAssignments,
+  type FrontAssignments,
+  type FrontColor,
+} from "@/lib/activity-fronts";
+import { searchCharacters, type Character } from "@/lib/characters";
+import { listGuilds, type Guild } from "@/lib/guilds";
 import { supabase } from "@/lib/supabase";
 
 function formatActivityDate(dateStr: string): string {
@@ -165,12 +178,374 @@ function ActivityModal({
   );
 }
 
+function FrontCard({
+  color,
+  front,
+  allGuilds,
+  onAddGuild,
+  onRemoveGuild,
+  onAddOrganizer,
+  onRemoveOrganizer,
+}: {
+  color: FrontColor;
+  front: FrontAssignments[FrontColor];
+  allGuilds: Guild[];
+  onAddGuild: (guild: Guild) => void;
+  onRemoveGuild: (guildId: number) => void;
+  onAddOrganizer: (character: Character) => void;
+  onRemoveOrganizer: (index: number) => void;
+}) {
+  const [guildQuery, setGuildQuery] = useState("");
+  const [organizerQuery, setOrganizerQuery] = useState("");
+  const [organizerResults, setOrganizerResults] = useState<Character[]>([]);
+  const [isSearchingOrganizers, setIsSearchingOrganizers] = useState(false);
+
+  const maxOrganizers = maxOrganizersFor(front.guilds.length);
+
+  const guildSuggestions = guildQuery.trim()
+    ? allGuilds
+        .filter(
+          (g) =>
+            g.name.toLowerCase().includes(guildQuery.toLowerCase()) &&
+            !front.guilds.some((a) => a.external_id === g.external_id),
+        )
+        .slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    const trimmed = organizerQuery.trim();
+    if (!trimmed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing results synchronously when the search box is emptied
+      setOrganizerResults([]);
+      return;
+    }
+    const handle = setTimeout(() => {
+      setIsSearchingOrganizers(true);
+      searchCharacters(trimmed)
+        .then(setOrganizerResults)
+        .finally(() => setIsSearchingOrganizers(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [organizerQuery]);
+
+  const organizerSuggestions = organizerResults.filter(
+    (c) => !front.organizers.some((o) => o.character_id === c.external_id),
+  );
+
+  return (
+    <div className="rounded-xl border border-black/[.08] p-3 dark:border-white/[.145]">
+      <div className="mb-2 flex items-center gap-2">
+        <span
+          className={`rounded-full px-2 py-1 text-xs font-medium ${FRONT_COLOR_STYLES[color]}`}
+        >
+          {color}
+        </span>
+      </div>
+      <div className="mb-2 flex flex-wrap gap-2">
+        {front.guilds.map((g) => (
+          <span
+            key={g.external_id}
+            className="flex items-center gap-1 rounded-full bg-black/[.05] px-2 py-1 text-xs text-foreground dark:bg-white/[.08]"
+          >
+            {g.name}
+            <button
+              type="button"
+              onClick={() => onRemoveGuild(g.external_id)}
+              className="text-foreground/50 hover:text-foreground"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        {front.guilds.length === 0 && (
+          <span className="text-xs text-foreground/40">Aucune guilde</span>
+        )}
+      </div>
+      <div className="relative">
+        <input
+          type="text"
+          value={guildQuery}
+          onChange={(e) => setGuildQuery(e.target.value)}
+          placeholder="Rechercher une guilde à ajouter…"
+          className="w-full rounded border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
+        {guildSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/[.08] bg-white shadow-lg dark:border-white/[.145] dark:bg-zinc-800">
+            {guildSuggestions.map((g) => (
+              <button
+                key={g.external_id}
+                type="button"
+                onClick={() => {
+                  onAddGuild(g);
+                  setGuildQuery("");
+                }}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {front.guilds.length > 0 && (
+        <div className="mt-3 border-t border-black/[.08] pt-3 dark:border-white/[.145]">
+          <span className="mb-2 block text-xs font-medium text-foreground/70">
+            Organisateurs ({front.organizers.length}/{maxOrganizers})
+          </span>
+          <div className="mb-2 flex flex-col gap-1">
+            {front.organizers.map((organizer, index) => (
+              <div
+                key={`${organizer.character_id}-${index}`}
+                className="flex items-center justify-between gap-2 rounded bg-black/[.05] px-2 py-1.5 text-xs text-foreground dark:bg-white/[.08]"
+              >
+                <span>
+                  {organizer.name}
+                  {organizer.email ? ` — ${organizer.email}` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRemoveOrganizer(index)}
+                  className="flex-shrink-0 text-foreground/50 hover:text-foreground"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            {front.organizers.length === 0 && (
+              <span className="text-xs text-foreground/40">
+                Aucun organisateur
+              </span>
+            )}
+          </div>
+
+          {front.organizers.length < maxOrganizers && (
+            <div className="relative">
+              <input
+                type="text"
+                value={organizerQuery}
+                onChange={(e) => setOrganizerQuery(e.target.value)}
+                placeholder="Rechercher un personnage à ajouter…"
+                className="w-full rounded border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+              />
+              {isSearchingOrganizers && (
+                <p className="mt-1 text-xs text-foreground/40">Recherche…</p>
+              )}
+              {organizerSuggestions.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/[.08] bg-white shadow-lg dark:border-white/[.145] dark:bg-zinc-800">
+                  {organizerSuggestions.map((c) => (
+                    <button
+                      key={c.external_id}
+                      type="button"
+                      onClick={() => {
+                        onAddOrganizer(c);
+                        setOrganizerQuery("");
+                        setOrganizerResults([]);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                    >
+                      {c.name}
+                      {c.player_name ? ` — ${c.player_name}` : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityFrontsModal({
+  activity,
+  onClose,
+}: {
+  activity: Activity;
+  onClose: () => void;
+}) {
+  const [allGuilds, setAllGuilds] = useState<Guild[]>([]);
+  const [assignments, setAssignments] = useState<FrontAssignments | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const availableColors = FRONT_COLORS.slice(
+    0,
+    Math.max(1, Math.min(activity.number_of_fronts, FRONT_COLORS.length)),
+  );
+
+  useEffect(() => {
+    Promise.all([listGuilds(), getActivityFrontAssignments(activity.id)])
+      .then(([guilds, existing]) => {
+        setAllGuilds(guilds);
+        setAssignments(existing);
+      })
+      .finally(() => setIsLoading(false));
+  }, [activity.id]);
+
+  const addGuild = (color: FrontColor, guild: Guild) => {
+    setAssignments((prev) => {
+      if (!prev) return prev;
+      if (prev[color].guilds.some((g) => g.external_id === guild.external_id))
+        return prev;
+      return {
+        ...prev,
+        [color]: {
+          ...prev[color],
+          guilds: [
+            ...prev[color].guilds,
+            { external_id: guild.external_id, name: guild.name },
+          ],
+        },
+      };
+    });
+  };
+
+  const removeGuild = (color: FrontColor, guildId: number) => {
+    setAssignments((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [color]: {
+          ...prev[color],
+          guilds: prev[color].guilds.filter((g) => g.external_id !== guildId),
+        },
+      };
+    });
+  };
+
+  const addOrganizer = (color: FrontColor, character: Character) => {
+    setAssignments((prev) => {
+      if (!prev) return prev;
+      const max = maxOrganizersFor(prev[color].guilds.length);
+      if (prev[color].organizers.length >= max) return prev;
+      if (
+        prev[color].organizers.some(
+          (o) => o.character_id === character.external_id,
+        )
+      )
+        return prev;
+      return {
+        ...prev,
+        [color]: {
+          ...prev[color],
+          organizers: [
+            ...prev[color].organizers,
+            {
+              character_id: character.external_id,
+              name: character.player_name ?? character.name,
+              email: character.player_email,
+            },
+          ],
+        },
+      };
+    });
+  };
+
+  const removeOrganizer = (color: FrontColor, index: number) => {
+    setAssignments((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [color]: {
+          ...prev[color],
+          organizers: prev[color].organizers.filter((_, i) => i !== index),
+        },
+      };
+    });
+  };
+
+  const handleSave = async () => {
+    if (!assignments) return;
+    setError(null);
+    setIsSaving(true);
+    try {
+      const sanitized = { ...assignments };
+      for (const color of FRONT_COLORS) {
+        if (!availableColors.includes(color))
+          sanitized[color] = { guilds: [], organizers: [] };
+      }
+      await saveActivityFrontAssignments(activity.id, sanitized);
+      onClose();
+    } catch {
+      setError("Échec de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <h2 className="font-semibold text-foreground">
+          Fronts — {activity.name}
+        </h2>
+        <p className="-mt-2 text-sm text-foreground/60">
+          {activity.number_of_fronts} front
+          {activity.number_of_fronts > 1 ? "s" : ""} prévu
+          {activity.number_of_fronts > 1 ? "s" : ""} pour cette activité.
+        </p>
+
+        {isLoading || !assignments ? (
+          <p className="text-sm text-foreground/60">Chargement…</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {availableColors.map((color) => (
+              <FrontCard
+                key={color}
+                color={color}
+                front={assignments[color]}
+                allGuilds={allGuilds}
+                onAddGuild={(guild) => addGuild(color, guild)}
+                onRemoveGuild={(guildId) => removeGuild(color, guildId)}
+                onAddOrganizer={(character) => addOrganizer(color, character)}
+                onRemoveOrganizer={(index) => removeOrganizer(color, index)}
+              />
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+
+        <div className="mt-1 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || isLoading}
+            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "…" : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivitesContent() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [frontsActivity, setFrontsActivity] = useState<Activity | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -348,6 +723,13 @@ function ActivitesContent() {
                         <td className="py-2 pr-4">
                           <div className="flex items-center gap-1">
                             <button
+                              onClick={() => setFrontsActivity(activity)}
+                              aria-label="Fronts"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Flag size={16} />
+                            </button>
+                            <button
                               onClick={() => setEditingActivity(activity)}
                               aria-label="Modifier"
                               className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
@@ -384,6 +766,12 @@ function ActivitesContent() {
           initial={editingActivity}
           onClose={() => setEditingActivity(null)}
           onSaved={fetchActivities}
+        />
+      )}
+      {frontsActivity && (
+        <ActivityFrontsModal
+          activity={frontsActivity}
+          onClose={() => setFrontsActivity(null)}
         />
       )}
     </div>
