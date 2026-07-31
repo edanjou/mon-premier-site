@@ -1,15 +1,23 @@
 "use client";
 
 import Konva from "konva";
+import Image from "next/image";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
   Archive,
   ArrowLeft,
+  ArrowUpRight,
+  Circle as CircleIcon,
   Copy,
   Folder,
   Images,
+  Lock,
+  LockOpen,
+  Menu,
   MousePointer2,
   Pencil,
+  Pentagon,
+  Slash,
   Trash2,
   X,
   ZoomIn,
@@ -17,6 +25,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
+  Arrow,
+  Circle,
   Image as KonvaImage,
   Layer,
   Line,
@@ -25,6 +35,7 @@ import {
   Transformer,
 } from "react-konva";
 import useImage from "use-image";
+import { gadevox } from "@/app/fonts/gadevox";
 import {
   deleteFolder,
   deleteMedia,
@@ -37,7 +48,16 @@ import {
   type MediaFolder,
 } from "@/lib/media-library";
 
-type Tool = "select" | "draw";
+type DragShapeKind = "line" | "arrow" | "circle";
+type MapShapeKind = DragShapeKind | "polygon";
+
+type Tool = "select" | "draw" | MapShapeKind;
+
+const SHAPE_TOOLS: DragShapeKind[] = ["line", "arrow", "circle"];
+
+function isShapeKind(tool: Tool): tool is DragShapeKind {
+  return (SHAPE_TOOLS as Tool[]).includes(tool);
+}
 
 type OverlayShape = {
   id: string;
@@ -49,9 +69,36 @@ type OverlayShape = {
   rotation: number;
 };
 
+type DrawStyle = "solid" | "dashed";
+
 type DrawnLine = {
   id: string;
   points: number[];
+  stroke: string;
+  strokeWidth: number;
+  dash: number[];
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+};
+
+type MapShape = {
+  id: string;
+  kind: MapShapeKind;
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  stroke: string;
+  strokeWidth: number;
+  dash: number[];
+  points: number[];
+  radius: number;
+  fill: string;
+  fillOpacity: number;
 };
 
 type CanvasSize = {
@@ -59,22 +106,95 @@ type CanvasSize = {
   height: number;
 };
 
+type DragOrigin = {
+  draggedId: string;
+  origins: Map<string, { x: number; y: number }>;
+};
+
 const CANVAS_PRESETS: { label: string; width: number; height: number }[] = [
-  { label: "1000 × 640 (par défaut)", width: 1000, height: 640 },
-  { label: "1200 × 800", width: 1200, height: 800 },
-  { label: "1920 × 1080 (Full HD)", width: 1920, height: 1080 },
-  { label: "800 × 800 (carré)", width: 800, height: 800 },
+  { label: "3:2 (1200 × 800)", width: 1200, height: 800 },
+  { label: "1:1 (1000 × 1000)", width: 1000, height: 1000 },
 ];
+
+const DRAW_COLOR_SWATCHES = ["#1c1c1c", "#0e4fa7", "#efb200", "#dc2626"];
+const EMPTY_POINTS: number[] = [];
+const LOCAL_ONLY_VALUE = "__local__";
+const DEFAULT_LIBRARY_FOLDER = "elements";
 
 const MIN_STAGE_SCALE = 0.2;
 const MAX_STAGE_SCALE = 4;
+const OVERLAY_SCALE = 0.25;
+const BACKGROUND_SCALE = 3;
+const DEFAULT_BACKGROUND_URL =
+  "https://cfduycvxggikaxjilbkf.supabase.co/storage/v1/object/public/media/37e4ab42-762e-4453-9542-7d5204beb886.jpg";
+
+function getDashPattern(style: DrawStyle, width: number): number[] {
+  return style === "dashed" ? [width * 3, width * 2] : [];
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace("#", "");
+  const r = parseInt(normalized.substring(0, 2), 16);
+  const g = parseInt(normalized.substring(2, 4), 16);
+  const b = parseInt(normalized.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function getImageSize(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new window.Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onload = () =>
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
     img.onerror = reject;
     img.src = src;
+  });
+}
+
+const BACKGROUND_MAX_DIMENSION = 2000;
+const BACKGROUND_JPEG_QUALITY = 0.82;
+
+function compressBackgroundImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new window.Image();
+
+    img.onload = () => {
+      const scale = Math.min(
+        1,
+        BACKGROUND_MAX_DIMENSION / Math.max(img.width, img.height),
+      );
+      const width = Math.round(img.width * scale);
+      const height = Math.round(img.height * scale);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Impossible de compresser l'image."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          URL.revokeObjectURL(url);
+          if (!blob) {
+            reject(new Error("Impossible de compresser l'image."));
+            return;
+          }
+          resolve(new File([blob], "background.jpg", { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        BACKGROUND_JPEG_QUALITY,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Impossible de charger l'image pour la compresser."));
+    };
+    img.src = url;
   });
 }
 
@@ -126,24 +246,32 @@ function MediaLibraryPanel({
   entries,
   currentPath,
   isLoading,
+  selectedPaths,
   onClose,
   onEnterFolder,
   onGoBack,
-  onUseAsBackground,
   onAddAsOverlay,
   onDeleteFile,
   onDeleteFolder,
+  onToggleSelect,
+  onClearSelection,
+  onBulkAddOverlay,
+  onBulkDelete,
 }: {
   entries: MediaEntry[];
   currentPath: string;
   isLoading: boolean;
+  selectedPaths: string[];
   onClose: () => void;
   onEnterFolder: (path: string) => void;
   onGoBack: () => void;
-  onUseAsBackground: (file: MediaFile) => void;
   onAddAsOverlay: (file: MediaFile) => void;
   onDeleteFile: (file: MediaFile) => void;
   onDeleteFolder: (folder: MediaFolder) => void;
+  onToggleSelect: (path: string) => void;
+  onClearSelection: () => void;
+  onBulkAddOverlay: () => void;
+  onBulkDelete: () => void;
 }) {
   return (
     <div
@@ -178,14 +306,44 @@ function MediaLibraryPanel({
           </button>
         </div>
 
+        {selectedPaths.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2 text-sm">
+            <span className="text-black dark:text-zinc-50">
+              {selectedPaths.length} sélectionnée(s)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onBulkAddOverlay}
+                className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-[#0c4390]"
+              >
+                Ajouter comme calques
+              </button>
+              <button
+                onClick={onBulkDelete}
+                className="rounded-full border border-red-600 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+              >
+                Supprimer
+              </button>
+              <button
+                onClick={onClearSelection}
+                className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+              >
+                Désélectionner
+              </button>
+            </div>
+          </div>
+        )}
+
         {isLoading && (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Chargement…</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Chargement…
+          </p>
         )}
         {!isLoading && entries.length === 0 && (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {currentPath
               ? "Ce dossier est vide."
-              : "Aucune image pour l'instant. Les images ajoutées via \"Image de fond\", \"Ajouter une image\" ou un import .zip apparaîtront ici automatiquement."}
+              : 'Aucune image pour l\'instant. Les images ajoutées via "Ajouter une image" (en choisissant un dossier) ou un import .zip apparaîtront ici automatiquement.'}
           </p>
         )}
 
@@ -216,8 +374,19 @@ function MediaLibraryPanel({
             ) : (
               <div
                 key={entry.path}
-                className="group relative overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]"
+                className={`group relative overflow-hidden rounded-lg border ${
+                  selectedPaths.includes(entry.path)
+                    ? "border-2 border-primary"
+                    : "border-black/[.08] dark:border-white/[.145]"
+                }`}
               >
+                <input
+                  type="checkbox"
+                  checked={selectedPaths.includes(entry.path)}
+                  onChange={() => onToggleSelect(entry.path)}
+                  aria-label="Sélectionner cette image"
+                  className="absolute left-1 top-1 z-10 h-4 w-4 cursor-pointer accent-primary"
+                />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={entry.url}
@@ -231,18 +400,12 @@ function MediaLibraryPanel({
                 >
                   <X size={14} />
                 </button>
-                <div className="absolute inset-x-0 bottom-0 flex gap-1 bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={() => onUseAsBackground(entry)}
-                    className="flex-1 rounded bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white"
-                  >
-                    Fond
-                  </button>
+                <div className="absolute inset-x-0 bottom-0 bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     onClick={() => onAddAsOverlay(entry)}
-                    className="flex-1 rounded bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white"
+                    className="w-full rounded bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white"
                   >
-                    Calque
+                    Ajouter comme calque
                   </button>
                 </div>
               </div>
@@ -265,7 +428,7 @@ function FolderPickerModal({
   onConfirm: (folder: string) => void;
   onCancel: () => void;
 }) {
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(DEFAULT_LIBRARY_FOLDER);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
@@ -294,7 +457,10 @@ function FolderPickerModal({
               onChange={(e) => setSelected(e.target.value)}
               className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm dark:border-white/[.145] dark:bg-zinc-800 dark:text-zinc-50"
             >
-              <option value="">Racine (aucun dossier)</option>
+              <option value={LOCAL_ONLY_VALUE}>
+                Ne pas enregistrer dans la banque
+              </option>
+              <option value="">Banque : racine (aucun dossier)</option>
               {folders.map((f) => (
                 <option key={f} value={f}>
                   {f}
@@ -347,21 +513,41 @@ function BackgroundImage({
   imageRef,
   draggable,
   canvasSize,
+  pinLayers,
+  getAllLayerEntries,
+  onCommitPan,
 }: {
   src: string;
   imageRef: React.RefObject<Konva.Image | null>;
   draggable: boolean;
   canvasSize: CanvasSize;
+  pinLayers: boolean;
+  getAllLayerEntries: () => [string, Konva.Node][];
+  onCommitPan: (
+    origins: Map<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void;
 }) {
   const [image] = useImage(src, "anonymous");
   const hasFitRef = useRef(false);
+  const panOriginRef = useRef<{
+    startX: number;
+    startY: number;
+    origins: Map<string, { x: number; y: number }>;
+  } | null>(null);
+
+  useEffect(() => {
+    hasFitRef.current = false;
+  }, [src]);
 
   useEffect(() => {
     if (!image || hasFitRef.current || !imageRef.current) return;
-    const scale = Math.min(
+    const fitScale = Math.min(
       canvasSize.width / image.width,
       canvasSize.height / image.height,
     );
+    const scale = fitScale * BACKGROUND_SCALE;
     imageRef.current.scale({ x: scale, y: scale });
     imageRef.current.position({
       x: (canvasSize.width - image.width * scale) / 2,
@@ -371,30 +557,42 @@ function BackgroundImage({
     hasFitRef.current = true;
   }, [image, imageRef, canvasSize]);
 
-  const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault();
-    const node = e.target as Konva.Image;
-    const stage = node.getStage();
-    const pointer = stage?.getPointerPosition();
-    if (!stage || !pointer) return;
-
-    const oldScale = node.scaleX();
-    const mousePointTo = {
-      x: (pointer.x - node.x()) / oldScale,
-      y: (pointer.y - node.y()) / oldScale,
-    };
-
-    const scaleBy = 1.05;
-    const direction = e.evt.deltaY > 0 ? -1 : 1;
-    const rawScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-    const newScale = Math.min(Math.max(rawScale, 0.1), 8);
-
-    node.scale({ x: newScale, y: newScale });
-    node.position({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
+  const handleDragStart = (e: KonvaEventObject<DragEvent>) => {
+    if (!pinLayers) {
+      panOriginRef.current = null;
+      return;
+    }
+    const origins = new Map<string, { x: number; y: number }>();
+    getAllLayerEntries().forEach(([id, node]) => {
+      origins.set(id, { x: node.x(), y: node.y() });
     });
-    node.getLayer()?.batchDraw();
+    panOriginRef.current = {
+      startX: e.target.x(),
+      startY: e.target.y(),
+      origins,
+    };
+  };
+
+  const handleDragMove = (e: KonvaEventObject<DragEvent>) => {
+    const state = panOriginRef.current;
+    if (!state) return;
+    const dx = e.target.x() - state.startX;
+    const dy = e.target.y() - state.startY;
+    getAllLayerEntries().forEach(([id, node]) => {
+      const origin = state.origins.get(id);
+      if (origin) node.position({ x: origin.x + dx, y: origin.y + dy });
+    });
+    e.target.getLayer()?.batchDraw();
+  };
+
+  const handleDragEnd = (e: KonvaEventObject<DragEvent>) => {
+    const state = panOriginRef.current;
+    if (state) {
+      const dx = e.target.x() - state.startX;
+      const dy = e.target.y() - state.startY;
+      onCommitPan(state.origins, dx, dy);
+    }
+    panOriginRef.current = null;
   };
 
   if (!image) return null;
@@ -405,9 +603,76 @@ function BackgroundImage({
       image={image}
       draggable={draggable}
       name="background-image"
-      onWheel={handleWheel}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
     />
   );
+}
+
+function useGroupDragHandlers({
+  id,
+  selectedIds,
+  getNode,
+  dragOriginRef,
+  onCommitGroupMove,
+  onSingleDragEnd,
+}: {
+  id: string;
+  selectedIds: string[];
+  getNode: (id: string) => Konva.Node | undefined;
+  dragOriginRef: React.RefObject<DragOrigin | null>;
+  onCommitGroupMove: (
+    origins: Map<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void;
+  onSingleDragEnd: (x: number, y: number) => void;
+}) {
+  const isInMultiSelection = selectedIds.includes(id) && selectedIds.length > 1;
+
+  const onDragStart = () => {
+    if (isInMultiSelection) {
+      const origins = new Map<string, { x: number; y: number }>();
+      selectedIds.forEach((sid) => {
+        const node = getNode(sid);
+        if (node) origins.set(sid, { x: node.x(), y: node.y() });
+      });
+      dragOriginRef.current = { draggedId: id, origins };
+    } else {
+      dragOriginRef.current = null;
+    }
+  };
+
+  const onDragMove = (e: KonvaEventObject<DragEvent>) => {
+    const origin = dragOriginRef.current;
+    if (!origin || origin.draggedId !== id) return;
+    const start = origin.origins.get(id);
+    if (!start) return;
+    const dx = e.target.x() - start.x;
+    const dy = e.target.y() - start.y;
+    origin.origins.forEach((startPos, otherId) => {
+      if (otherId === id) return;
+      const node = getNode(otherId);
+      node?.position({ x: startPos.x + dx, y: startPos.y + dy });
+    });
+    e.target.getLayer()?.batchDraw();
+  };
+
+  const onDragEnd = (e: KonvaEventObject<DragEvent>) => {
+    const origin = dragOriginRef.current;
+    if (origin && origin.draggedId === id) {
+      const start = origin.origins.get(id);
+      const dx = start ? e.target.x() - start.x : 0;
+      const dy = start ? e.target.y() - start.y : 0;
+      onCommitGroupMove(origin.origins, dx, dy);
+      dragOriginRef.current = null;
+    } else {
+      onSingleDragEnd(e.target.x(), e.target.y());
+    }
+  };
+
+  return { onDragStart, onDragMove, onDragEnd };
 }
 
 function OverlayImage({
@@ -427,11 +692,8 @@ function OverlayImage({
   onSelect: (id: string, additive: boolean) => void;
   onChange: (attrs: Partial<OverlayShape>) => void;
   setShapeRef: (id: string, node: Konva.Image | null) => void;
-  getNode: (id: string) => Konva.Image | undefined;
-  dragOriginRef: React.RefObject<{
-    draggedId: string;
-    origins: Map<string, { x: number; y: number }>;
-  } | null>;
+  getNode: (id: string) => Konva.Node | undefined;
+  dragOriginRef: React.RefObject<DragOrigin | null>;
   onCommitGroupMove: (
     origins: Map<string, { x: number; y: number }>,
     dx: number,
@@ -439,7 +701,14 @@ function OverlayImage({
   ) => void;
 }) {
   const [image] = useImage(shape.src, "anonymous");
-  const isInMultiSelection = selectedIds.includes(shape.id) && selectedIds.length > 1;
+  const { onDragStart, onDragMove, onDragEnd } = useGroupDragHandlers({
+    id: shape.id,
+    selectedIds,
+    getNode,
+    dragOriginRef,
+    onCommitGroupMove,
+    onSingleDragEnd: (x, y) => onChange({ x, y }),
+  });
 
   return (
     <KonvaImage
@@ -451,46 +720,17 @@ function OverlayImage({
       height={shape.height}
       rotation={shape.rotation}
       draggable={draggable}
-      onClick={(e) => onSelect(shape.id, (e.evt as MouseEvent).shiftKey)}
-      onTap={() => onSelect(shape.id, false)}
-      onDragStart={() => {
-        if (isInMultiSelection) {
-          const origins = new Map<string, { x: number; y: number }>();
-          selectedIds.forEach((id) => {
-            const node = getNode(id);
-            if (node) origins.set(id, { x: node.x(), y: node.y() });
-          });
-          dragOriginRef.current = { draggedId: shape.id, origins };
-        } else {
-          dragOriginRef.current = null;
-        }
+      onClick={(e) => {
+        if (!draggable) return;
+        onSelect(shape.id, (e.evt as MouseEvent).shiftKey);
       }}
-      onDragMove={(e) => {
-        const origin = dragOriginRef.current;
-        if (!origin || origin.draggedId !== shape.id) return;
-        const start = origin.origins.get(shape.id);
-        if (!start) return;
-        const dx = e.target.x() - start.x;
-        const dy = e.target.y() - start.y;
-        origin.origins.forEach((startPos, id) => {
-          if (id === shape.id) return;
-          const node = getNode(id);
-          node?.position({ x: startPos.x + dx, y: startPos.y + dy });
-        });
-        e.target.getLayer()?.batchDraw();
+      onTap={() => {
+        if (!draggable) return;
+        onSelect(shape.id, false);
       }}
-      onDragEnd={(e) => {
-        const origin = dragOriginRef.current;
-        if (origin && origin.draggedId === shape.id) {
-          const start = origin.origins.get(shape.id);
-          const dx = start ? e.target.x() - start.x : 0;
-          const dy = start ? e.target.y() - start.y : 0;
-          onCommitGroupMove(origin.origins, dx, dy);
-          dragOriginRef.current = null;
-        } else {
-          onChange({ x: e.target.x(), y: e.target.y() });
-        }
-      }}
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
       onTransformEnd={(e) => {
         const node = e.target as Konva.Image;
         const scaleX = node.scaleX();
@@ -509,62 +749,390 @@ function OverlayImage({
   );
 }
 
+function LineShape({
+  shape,
+  selectedIds,
+  draggable,
+  onSelect,
+  onChange,
+  setLineRef,
+  getNode,
+  dragOriginRef,
+  onCommitGroupMove,
+}: {
+  shape: DrawnLine;
+  selectedIds: string[];
+  draggable: boolean;
+  onSelect: (id: string, additive: boolean) => void;
+  onChange: (attrs: Partial<DrawnLine>) => void;
+  setLineRef: (id: string, node: Konva.Line | null) => void;
+  getNode: (id: string) => Konva.Node | undefined;
+  dragOriginRef: React.RefObject<DragOrigin | null>;
+  onCommitGroupMove: (
+    origins: Map<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void;
+}) {
+  const { onDragStart, onDragMove, onDragEnd } = useGroupDragHandlers({
+    id: shape.id,
+    selectedIds,
+    getNode,
+    dragOriginRef,
+    onCommitGroupMove,
+    onSingleDragEnd: (x, y) => onChange({ x, y }),
+  });
+
+  return (
+    <Line
+      ref={(node) => setLineRef(shape.id, node)}
+      points={shape.points}
+      x={shape.x}
+      y={shape.y}
+      rotation={shape.rotation}
+      scaleX={shape.scaleX}
+      scaleY={shape.scaleY}
+      stroke={shape.stroke}
+      strokeWidth={shape.strokeWidth}
+      dash={shape.dash}
+      tension={0}
+      lineCap="round"
+      lineJoin="round"
+      hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
+      draggable={draggable}
+      onClick={(e) => {
+        if (!draggable) return;
+        onSelect(shape.id, (e.evt as MouseEvent).shiftKey);
+      }}
+      onTap={() => {
+        if (!draggable) return;
+        onSelect(shape.id, false);
+      }}
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      onTransformEnd={(e) => {
+        const node = e.target as Konva.Line;
+        onChange({
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          scaleX: node.scaleX(),
+          scaleY: node.scaleY(),
+        });
+      }}
+    />
+  );
+}
+
+function MapShapeItem({
+  shape,
+  selectedIds,
+  draggable,
+  onSelect,
+  onChange,
+  setShapeItemRef,
+  getNode,
+  dragOriginRef,
+  onCommitGroupMove,
+}: {
+  shape: MapShape;
+  selectedIds: string[];
+  draggable: boolean;
+  onSelect: (id: string, additive: boolean) => void;
+  onChange: (attrs: Partial<MapShape>) => void;
+  setShapeItemRef: (id: string, node: Konva.Shape | null) => void;
+  getNode: (id: string) => Konva.Node | undefined;
+  dragOriginRef: React.RefObject<DragOrigin | null>;
+  onCommitGroupMove: (
+    origins: Map<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void;
+}) {
+  const { onDragStart, onDragMove, onDragEnd } = useGroupDragHandlers({
+    id: shape.id,
+    selectedIds,
+    getNode,
+    dragOriginRef,
+    onCommitGroupMove,
+    onSingleDragEnd: (x, y) => onChange({ x, y }),
+  });
+
+  const handleTransformEnd = (e: KonvaEventObject<Event>) => {
+    const node = e.target;
+    onChange({
+      x: node.x(),
+      y: node.y(),
+      rotation: node.rotation(),
+      scaleX: node.scaleX(),
+      scaleY: node.scaleY(),
+    });
+  };
+
+  const handleClick = (e: KonvaEventObject<MouseEvent>) => {
+    if (!draggable) return;
+    onSelect(shape.id, e.evt.shiftKey);
+  };
+
+  const handleTap = () => {
+    if (!draggable) return;
+    onSelect(shape.id, false);
+  };
+
+  const common = {
+    x: shape.x,
+    y: shape.y,
+    rotation: shape.rotation,
+    scaleX: shape.scaleX,
+    scaleY: shape.scaleY,
+    stroke: shape.stroke,
+    strokeWidth: shape.strokeWidth,
+    dash: shape.dash,
+    draggable,
+    onClick: handleClick,
+    onTap: handleTap,
+    onDragStart,
+    onDragMove,
+    onDragEnd,
+    onTransformEnd: handleTransformEnd,
+  };
+
+  if (shape.kind === "line") {
+    return (
+      <Line
+        ref={(node) => setShapeItemRef(shape.id, node)}
+        {...common}
+        points={shape.points}
+        tension={0}
+        lineCap="round"
+        lineJoin="round"
+        hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
+      />
+    );
+  }
+
+  if (shape.kind === "arrow") {
+    return (
+      <Arrow
+        ref={(node) => setShapeItemRef(shape.id, node)}
+        {...common}
+        points={shape.points}
+        fill={shape.stroke}
+        pointerLength={12}
+        pointerWidth={12}
+        hitStrokeWidth={Math.max(shape.strokeWidth, 16)}
+      />
+    );
+  }
+
+  if (shape.kind === "polygon") {
+    return (
+      <Line
+        ref={(node) => setShapeItemRef(shape.id, node)}
+        {...common}
+        points={shape.points}
+        closed
+        fill={hexToRgba(shape.fill, shape.fillOpacity)}
+        lineJoin="round"
+      />
+    );
+  }
+
+  return (
+    <Circle
+      ref={(node) => setShapeItemRef(shape.id, node)}
+      {...common}
+      radius={shape.radius}
+      fillEnabled={false}
+    />
+  );
+}
+
 export default function MapEditor() {
-  const [backgroundSrc, setBackgroundSrc] = useState<string | null>(null);
+  const [backgroundSrc, setBackgroundSrc] = useState<string | null>(
+    DEFAULT_BACKGROUND_URL,
+  );
   const [overlays, setOverlays] = useState<OverlayShape[]>([]);
   const [lines, setLines] = useState<DrawnLine[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [tool, setTool] = useState<Tool>("select");
-  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 1000, height: 640 });
-  const [customWidth, setCustomWidth] = useState("1000");
-  const [customHeight, setCustomHeight] = useState("640");
+  const [pinLayersToBackground, setPinLayersToBackground] = useState(false);
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({
+    width: 1200,
+    height: 800,
+  });
   const [libraryEntries, setLibraryEntries] = useState<MediaEntry[]>([]);
   const [libraryPath, setLibraryPath] = useState("");
+  const [selectedMediaPaths, setSelectedMediaPaths] = useState<string[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
   const [isImportingZip, setIsImportingZip] = useState(false);
+  const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [pendingUpload, setPendingUpload] = useState<{
-    kind: "background" | "overlays";
-    files: File[];
-  } | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[] } | null>(
+    null,
+  );
   const [folderChoices, setFolderChoices] = useState<string[]>([]);
+  const [zoomMultiplier, setZoomMultiplier] = useState(1);
+  const [containerWidth, setContainerWidth] = useState(800);
+  const [viewportHeightBudget, setViewportHeightBudget] = useState(() =>
+    typeof window !== "undefined" ? window.innerHeight * 0.7 : 600,
+  );
+  const [drawColor, setDrawColor] = useState(DRAW_COLOR_SWATCHES[0]);
+  const [drawWidth, setDrawWidth] = useState(3);
+  const [drawStyle, setDrawStyle] = useState<DrawStyle>("solid");
+  const [fillColor, setFillColor] = useState(DRAW_COLOR_SWATCHES[1]);
+  const [fillOpacity, setFillOpacity] = useState(0.3);
+  const [mapShapes, setMapShapes] = useState<MapShape[]>([]);
 
   const stageRef = useRef<Konva.Stage>(null);
+  const stageContainerRef = useRef<HTMLDivElement>(null);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const bgImageRef = useRef<Konva.Image>(null);
+  const backgroundBlobUrlRef = useRef<string | null>(null);
   const shapeRefs = useRef(new Map<string, Konva.Image>());
+  const lineRefs = useRef(new Map<string, Konva.Line>());
+  const mapShapeRefs = useRef(new Map<string, Konva.Shape>());
   const selectionRectRef = useRef<Konva.Rect>(null);
   const drawingLineRef = useRef<Konva.Line>(null);
+  const previewLineRef = useRef<Konva.Line>(null);
+  const previewArrowRef = useRef<Konva.Arrow>(null);
+  const previewCircleRef = useRef<Konva.Circle>(null);
+  const previewPolygonRef = useRef<Konva.Line>(null);
 
   const isSelectingRef = useRef(false);
   const selectionStartRef = useRef({ x: 0, y: 0 });
   const isDrawingRef = useRef(false);
   const drawingPointsRef = useRef<number[]>([]);
-  const dragOriginRef = useRef<{
-    draggedId: string;
-    origins: Map<string, { x: number; y: number }>;
-  } | null>(null);
+  const shapeDrawStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isDrawingPolygonRef = useRef(false);
+  const polygonPointsRef = useRef<number[]>([]);
+  const dragOriginRef = useRef<DragOrigin | null>(null);
+
+  const getNode = (id: string): Konva.Node | undefined =>
+    shapeRefs.current.get(id) ??
+    lineRefs.current.get(id) ??
+    mapShapeRefs.current.get(id);
+
+  const getAllLayerEntries = (): [string, Konva.Node][] => [
+    ...Array.from(shapeRefs.current.entries()),
+    ...Array.from(lineRefs.current.entries()),
+    ...Array.from(mapShapeRefs.current.entries()),
+  ];
+
+  const setMapShapeRef = (id: string, node: Konva.Shape | null) => {
+    if (node) mapShapeRefs.current.set(id, node);
+    else mapShapeRefs.current.delete(id);
+  };
+
+  const hidePreviewShapes = () => {
+    previewLineRef.current?.visible(false);
+    previewArrowRef.current?.visible(false);
+    previewCircleRef.current?.visible(false);
+    previewLineRef.current?.getLayer()?.batchDraw();
+  };
+
+  const hidePolygonPreview = () => {
+    previewPolygonRef.current?.points([]);
+    previewPolygonRef.current?.visible(false);
+    previewPolygonRef.current?.getLayer()?.batchDraw();
+  };
+
+  useEffect(() => {
+    if (!isUploadMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        uploadMenuRef.current &&
+        !uploadMenuRef.current.contains(e.target as Node)
+      ) {
+        setIsUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isUploadMenuOpen]);
+
+  useEffect(() => {
+    const el = stageContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = Math.round(entry.contentRect.width);
+        if (width > 0) {
+          setContainerWidth((prev) => (prev === width ? prev : width));
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () =>
+      setViewportHeightBudget(window.innerHeight * 0.7);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const widthBasedHeight =
+    containerWidth * (canvasSize.height / canvasSize.width);
+  const displayWidth =
+    widthBasedHeight <= viewportHeightBudget
+      ? containerWidth
+      : viewportHeightBudget * (canvasSize.width / canvasSize.height);
+  const displayHeight =
+    widthBasedHeight <= viewportHeightBudget
+      ? widthBasedHeight
+      : viewportHeightBudget;
+  const baseFitScale = displayWidth > 0 ? displayWidth / canvasSize.width : 1;
+  const totalStageScale = baseFitScale * zoomMultiplier;
+  const stagePosX = (displayWidth - canvasSize.width * totalStageScale) / 2;
+  const stagePosY = (displayHeight - canvasSize.height * totalStageScale) / 2;
 
   useEffect(() => {
     const transformer = transformerRef.current;
     if (!transformer) return;
     const nodes = selectedIds
-      .map((id) => shapeRefs.current.get(id))
-      .filter((node): node is Konva.Image => Boolean(node));
+      .map((id) => getNode(id))
+      .filter((node): node is Konva.Node => Boolean(node));
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
   }, [selectedIds]);
+
+  const deleteSelectedShapes = () => {
+    if (selectedIds.length === 0) return;
+    setOverlays((prev) => prev.filter((o) => !selectedIds.includes(o.id)));
+    setLines((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
+    setMapShapes((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+    selectedIds.forEach((id) => {
+      shapeRefs.current.delete(id);
+      lineRefs.current.delete(id);
+      mapShapeRefs.current.delete(id);
+    });
+    setSelectedIds([]);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement
+      )
+        return;
       if (selectedIds.length === 0) return;
       e.preventDefault();
       setOverlays((prev) => prev.filter((o) => !selectedIds.includes(o.id)));
-      selectedIds.forEach((id) => shapeRefs.current.delete(id));
+      setLines((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
+      setMapShapes((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+      selectedIds.forEach((id) => {
+        shapeRefs.current.delete(id);
+        lineRefs.current.delete(id);
+        mapShapeRefs.current.delete(id);
+      });
       setSelectedIds([]);
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -580,7 +1148,8 @@ export default function MapEditor() {
         if (!cancelled) setLibraryEntries(entries);
       })
       .catch(() => {
-        if (!cancelled) setUploadError("Impossible de charger la banque de médias.");
+        if (!cancelled)
+          setUploadError("Impossible de charger la banque de médias.");
       })
       .finally(() => {
         if (!cancelled) setIsLoadingLibrary(false);
@@ -604,19 +1173,25 @@ export default function MapEditor() {
     else shapeRefs.current.delete(id);
   };
 
-  const getNode = (id: string) => shapeRefs.current.get(id);
-
-  const handleSetTool = (next: Tool) => {
-    setTool(next);
-    if (next === "draw") setSelectedIds([]);
+  const setLineRef = (id: string, node: Konva.Line | null) => {
+    if (node) lineRefs.current.set(id, node);
+    else lineRefs.current.delete(id);
   };
 
-  const openFolderPicker = async (upload: { kind: "background" | "overlays"; files: File[] }) => {
+  const handleSetTool = (next: Tool) => {
+    if (tool === "polygon" && next !== "polygon") cancelPolygon();
+    setTool(next);
+    if (next !== "select") setSelectedIds([]);
+  };
+
+  const openFolderPicker = async (upload: { files: File[] }) => {
     setUploadError(null);
     try {
       const rootEntries = await listMedia("");
       setFolderChoices(
-        rootEntries.filter((entry): entry is MediaFolder => entry.type === "folder").map((f) => f.name),
+        rootEntries
+          .filter((entry): entry is MediaFolder => entry.type === "folder")
+          .map((f) => f.name),
       );
     } catch {
       setFolderChoices([]);
@@ -630,40 +1205,54 @@ export default function MapEditor() {
     setPendingUpload(null);
     setUploadError(null);
 
+    if (folder === LOCAL_ONLY_VALUE) {
+      const localFiles = upload.files.map((file) => ({
+        url: URL.createObjectURL(file),
+      }));
+      await addOverlaysFromMedia(localFiles);
+      return;
+    }
+
     try {
       const uploaded = await Promise.all(
         upload.files.map((file) => uploadMedia(file, folder)),
       );
-      if (upload.kind === "background") {
-        setBackgroundSrc(uploaded[0].url);
-      } else {
-        await addOverlaysFromMedia(uploaded);
-      }
+      await addOverlaysFromMedia(uploaded);
       if (libraryPath === folder) await refreshLibrary();
     } catch {
       setUploadError(
-        upload.kind === "background"
-          ? "Échec de l'envoi de l'image de fond vers la banque de médias."
-          : "Échec de l'envoi d'une ou plusieurs images vers la banque de médias.",
+        "Échec de l'envoi d'une ou plusieurs images vers la banque de médias.",
       );
     }
   };
 
-  const handleBackgroundChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBackgroundChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    await openFolderPicker({ kind: "background", files: [file] });
+
+    setUploadError(null);
+    try {
+      const compressed = await compressBackgroundImage(file);
+      const url = URL.createObjectURL(compressed);
+      if (backgroundBlobUrlRef.current)
+        URL.revokeObjectURL(backgroundBlobUrlRef.current);
+      backgroundBlobUrlRef.current = url;
+      setBackgroundSrc(url);
+    } catch {
+      setUploadError("Échec du traitement de l'image de fond.");
+    }
   };
 
-  const addOverlaysFromMedia = async (files: MediaFile[]) => {
-    const maxSide = 220;
+  const addOverlaysFromMedia = async (files: { url: string }[]) => {
     const newOverlays: OverlayShape[] = [];
     let cascade = overlays.length;
 
     for (const file of files) {
       const { width, height } = await getImageSize(file.url);
-      const scale = Math.min(1, maxSide / Math.max(width, height));
+      const scale = OVERLAY_SCALE;
       const w = width * scale;
       const h = height * scale;
       const offset = cascade * 24;
@@ -686,7 +1275,7 @@ export default function MapEditor() {
     const files = e.target.files;
     e.target.value = "";
     if (!files || files.length === 0) return;
-    await openFolderPicker({ kind: "overlays", files: Array.from(files) });
+    await openFolderPicker({ files: Array.from(files) });
   };
 
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -705,16 +1294,13 @@ export default function MapEditor() {
       if (libraryPath === "") await refreshLibrary();
     } catch (err) {
       setUploadError(
-        err instanceof Error ? err.message : "Échec de l'import du fichier .zip.",
+        err instanceof Error
+          ? err.message
+          : "Échec de l'import du fichier .zip.",
       );
     } finally {
       setIsImportingZip(false);
     }
-  };
-
-  const handleUseLibraryAsBackground = (file: MediaFile) => {
-    setBackgroundSrc(file.url);
-    setIsLibraryOpen(false);
   };
 
   const handleAddLibraryOverlay = async (file: MediaFile) => {
@@ -742,14 +1328,60 @@ export default function MapEditor() {
 
   const handleEnterFolder = (path: string) => {
     setLibraryPath(path);
+    setSelectedMediaPaths([]);
   };
 
   const handleGoBackInLibrary = () => {
-    setLibraryPath((prev) => (prev.includes("/") ? prev.slice(0, prev.lastIndexOf("/")) : ""));
+    setLibraryPath((prev) =>
+      prev.includes("/") ? prev.slice(0, prev.lastIndexOf("/")) : "",
+    );
+    setSelectedMediaPaths([]);
+  };
+
+  const handleToggleMediaSelect = (path: string) => {
+    setSelectedMediaPaths((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path],
+    );
+  };
+
+  const handleClearMediaSelection = () => setSelectedMediaPaths([]);
+
+  const handleBulkAddOverlay = async () => {
+    const files = libraryEntries.filter(
+      (entry): entry is MediaFile =>
+        entry.type === "file" && selectedMediaPaths.includes(entry.path),
+    );
+    if (files.length === 0) return;
+    await addOverlaysFromMedia(files);
+    setSelectedMediaPaths([]);
+    setIsLibraryOpen(false);
+  };
+
+  const handleBulkDeleteMedia = async () => {
+    if (selectedMediaPaths.length === 0) return;
+    try {
+      await Promise.all(selectedMediaPaths.map((path) => deleteMedia(path)));
+      setSelectedMediaPaths([]);
+      await refreshLibrary();
+    } catch {
+      setUploadError("Échec de la suppression de certains médias.");
+    }
   };
 
   const handleOverlayChange = (id: string, attrs: Partial<OverlayShape>) => {
-    setOverlays((prev) => prev.map((o) => (o.id === id ? { ...o, ...attrs } : o)));
+    setOverlays((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, ...attrs } : o)),
+    );
+  };
+
+  const handleLineChange = (id: string, attrs: Partial<DrawnLine>) => {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...attrs } : l)));
+  };
+
+  const handleMapShapeChange = (id: string, attrs: Partial<MapShape>) => {
+    setMapShapes((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...attrs } : s)),
+    );
   };
 
   const handleOverlaySelect = (id: string, additive: boolean) => {
@@ -773,72 +1405,79 @@ export default function MapEditor() {
         return { ...o, x: start.x + dx, y: start.y + dy };
       }),
     );
+    setLines((prev) =>
+      prev.map((l) => {
+        const start = origins.get(l.id);
+        if (!start) return l;
+        return { ...l, x: start.x + dx, y: start.y + dy };
+      }),
+    );
+    setMapShapes((prev) =>
+      prev.map((s) => {
+        const start = origins.get(s.id);
+        if (!start) return s;
+        return { ...s, x: start.x + dx, y: start.y + dy };
+      }),
+    );
   };
 
   const handleDuplicate = () => {
     if (selectedIds.length === 0) return;
     const offset = 20;
-    const newShapes: OverlayShape[] = [];
+    const newOverlayShapes: OverlayShape[] = [];
+    const newLineShapes: DrawnLine[] = [];
+    const newMapShapes: MapShape[] = [];
     const newIds: string[] = [];
+
     overlays.forEach((o) => {
       if (selectedIds.includes(o.id)) {
         const id = crypto.randomUUID();
         newIds.push(id);
-        newShapes.push({ ...o, id, x: o.x + offset, y: o.y + offset });
+        newOverlayShapes.push({ ...o, id, x: o.x + offset, y: o.y + offset });
       }
     });
-    if (newShapes.length === 0) return;
-    setOverlays((prev) => [...prev, ...newShapes]);
+    lines.forEach((l) => {
+      if (selectedIds.includes(l.id)) {
+        const id = crypto.randomUUID();
+        newIds.push(id);
+        newLineShapes.push({ ...l, id, x: l.x + offset, y: l.y + offset });
+      }
+    });
+    mapShapes.forEach((s) => {
+      if (selectedIds.includes(s.id)) {
+        const id = crypto.randomUUID();
+        newIds.push(id);
+        newMapShapes.push({ ...s, id, x: s.x + offset, y: s.y + offset });
+      }
+    });
+
+    if (newIds.length === 0) return;
+    if (newOverlayShapes.length > 0)
+      setOverlays((prev) => [...prev, ...newOverlayShapes]);
+    if (newLineShapes.length > 0)
+      setLines((prev) => [...prev, ...newLineShapes]);
+    if (newMapShapes.length > 0)
+      setMapShapes((prev) => [...prev, ...newMapShapes]);
     setSelectedIds(newIds);
   };
 
-  const handleDeleteSelected = () => {
-    if (selectedIds.length === 0) return;
-    setOverlays((prev) => prev.filter((o) => !selectedIds.includes(o.id)));
-    selectedIds.forEach((id) => shapeRefs.current.delete(id));
-    setSelectedIds([]);
-  };
-
   const zoomStage = (factor: number) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const oldScale = stage.scaleX();
-    const newScale = Math.min(MAX_STAGE_SCALE, Math.max(MIN_STAGE_SCALE, oldScale * factor));
-    const center = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
-    const relatedTo = {
-      x: (center.x - stage.x()) / oldScale,
-      y: (center.y - stage.y()) / oldScale,
-    };
-    stage.scale({ x: newScale, y: newScale });
-    stage.position({
-      x: center.x - relatedTo.x * newScale,
-      y: center.y - relatedTo.y * newScale,
-    });
-    stage.batchDraw();
+    setZoomMultiplier((prev) =>
+      Math.min(MAX_STAGE_SCALE, Math.max(MIN_STAGE_SCALE, prev * factor)),
+    );
   };
 
   const applyCanvasSize = (width: number, height: number) => {
     const w = Math.max(100, Math.min(4000, Math.round(width)));
     const h = Math.max(100, Math.min(4000, Math.round(height)));
     setCanvasSize({ width: w, height: h });
-    setCustomWidth(String(w));
-    setCustomHeight(String(h));
-    stageRef.current?.scale({ x: 1, y: 1 });
-    stageRef.current?.position({ x: 0, y: 0 });
-    stageRef.current?.batchDraw();
   };
 
   const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const preset = CANVAS_PRESETS.find((p) => `${p.width}x${p.height}` === e.target.value);
+    const preset = CANVAS_PRESETS.find(
+      (p) => `${p.width}x${p.height}` === e.target.value,
+    );
     if (preset) applyCanvasSize(preset.width, preset.height);
-  };
-
-  const handleCustomSizeApply = () => {
-    const w = parseInt(customWidth, 10);
-    const h = parseInt(customHeight, 10);
-    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
-      applyCanvasSize(w, h);
-    }
   };
 
   const startDrawing = (pos: { x: number; y: number }) => {
@@ -859,8 +1498,26 @@ export default function MapEditor() {
   const finishDrawing = () => {
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
-    if (drawingPointsRef.current.length >= 4) {
-      setLines((prev) => [...prev, { id: crypto.randomUUID(), points: drawingPointsRef.current }]);
+    const points =
+      drawingPointsRef.current.length === 2
+        ? [...drawingPointsRef.current, ...drawingPointsRef.current]
+        : drawingPointsRef.current;
+    if (points.length >= 4) {
+      setLines((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          points,
+          stroke: drawColor,
+          strokeWidth: drawWidth,
+          dash: getDashPattern(drawStyle, drawWidth),
+          x: 0,
+          y: 0,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+        },
+      ]);
     }
     drawingPointsRef.current = [];
     drawingLineRef.current?.points([]);
@@ -868,14 +1525,185 @@ export default function MapEditor() {
     drawingLineRef.current?.getLayer()?.batchDraw();
   };
 
+  const startShapeDraw = (pos: { x: number; y: number }) => {
+    shapeDrawStartRef.current = pos;
+    updateShapePreview(pos);
+  };
+
+  const updateShapePreview = (pos: { x: number; y: number }) => {
+    const start = shapeDrawStartRef.current;
+    if (!start || !isShapeKind(tool)) return;
+    const dx = pos.x - start.x;
+    const dy = pos.y - start.y;
+
+    if (tool === "line") {
+      previewLineRef.current?.setAttrs({
+        points: [start.x, start.y, pos.x, pos.y],
+        visible: true,
+      });
+      previewLineRef.current?.getLayer()?.batchDraw();
+    } else if (tool === "arrow") {
+      previewArrowRef.current?.setAttrs({
+        points: [start.x, start.y, pos.x, pos.y],
+        visible: true,
+      });
+      previewArrowRef.current?.getLayer()?.batchDraw();
+    } else if (tool === "circle") {
+      previewCircleRef.current?.setAttrs({
+        x: start.x,
+        y: start.y,
+        radius: Math.hypot(dx, dy),
+        visible: true,
+      });
+      previewCircleRef.current?.getLayer()?.batchDraw();
+    }
+  };
+
+  const finishShapeDraw = () => {
+    const start = shapeDrawStartRef.current;
+    if (!start || !isShapeKind(tool)) return;
+    const kind = tool;
+
+    const base = {
+      id: crypto.randomUUID(),
+      kind,
+      stroke: drawColor,
+      strokeWidth: drawWidth,
+      dash: getDashPattern(drawStyle, drawWidth),
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      fill: fillColor,
+      fillOpacity,
+    };
+
+    let newShape: MapShape | null = null;
+
+    if (kind === "line" || kind === "arrow") {
+      const node =
+        kind === "line" ? previewLineRef.current : previewArrowRef.current;
+      const points = node?.points() ?? [];
+      if (
+        points.length >= 4 &&
+        Math.hypot(points[2] - points[0], points[3] - points[1]) > 4
+      ) {
+        newShape = { ...base, x: 0, y: 0, points, radius: 0 };
+      }
+    } else if (kind === "circle") {
+      const node = previewCircleRef.current;
+      const radius = node?.radius() ?? 0;
+      if (radius > 4) {
+        newShape = {
+          ...base,
+          x: node?.x() ?? 0,
+          y: node?.y() ?? 0,
+          points: [],
+          radius,
+        };
+      }
+    }
+
+    if (newShape) setMapShapes((prev) => [...prev, newShape as MapShape]);
+    shapeDrawStartRef.current = null;
+    hidePreviewShapes();
+  };
+
+  const startPolygon = (pos: { x: number; y: number }) => {
+    isDrawingPolygonRef.current = true;
+    polygonPointsRef.current = [pos.x, pos.y];
+    previewPolygonRef.current?.setAttrs({
+      points: polygonPointsRef.current,
+      visible: true,
+    });
+    previewPolygonRef.current?.getLayer()?.batchDraw();
+  };
+
+  const addPolygonPoint = (pos: { x: number; y: number }) => {
+    polygonPointsRef.current = [...polygonPointsRef.current, pos.x, pos.y];
+    previewPolygonRef.current?.setAttrs({ points: polygonPointsRef.current });
+    previewPolygonRef.current?.getLayer()?.batchDraw();
+  };
+
+  const updatePolygonRubberBand = (pos: { x: number; y: number }) => {
+    if (!isDrawingPolygonRef.current) return;
+    previewPolygonRef.current?.setAttrs({
+      points: [...polygonPointsRef.current, pos.x, pos.y],
+    });
+    previewPolygonRef.current?.getLayer()?.batchDraw();
+  };
+
+  const finishPolygon = () => {
+    if (!isDrawingPolygonRef.current) return;
+    isDrawingPolygonRef.current = false;
+    const points = polygonPointsRef.current;
+    if (points.length >= 6) {
+      setMapShapes((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          kind: "polygon",
+          x: 0,
+          y: 0,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          stroke: drawColor,
+          strokeWidth: drawWidth,
+          dash: getDashPattern(drawStyle, drawWidth),
+          points,
+          radius: 0,
+          fill: fillColor,
+          fillOpacity,
+        },
+      ]);
+    }
+    polygonPointsRef.current = [];
+    hidePolygonPreview();
+  };
+
+  const cancelPolygon = () => {
+    isDrawingPolygonRef.current = false;
+    polygonPointsRef.current = [];
+    hidePolygonPreview();
+  };
+
+  useEffect(() => {
+    const handlePolygonKeyDown = (e: KeyboardEvent) => {
+      if (tool !== "polygon" || !isDrawingPolygonRef.current) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finishPolygon();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancelPolygon();
+      }
+    };
+    window.addEventListener("keydown", handlePolygonKeyDown);
+    return () => window.removeEventListener("keydown", handlePolygonKeyDown);
+  }, [tool, drawColor, drawWidth, drawStyle, fillColor, fillOpacity]);
+
   const handlePointerDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     const stage = stageRef.current;
     if (!stage) return;
-    const pos = stage.getPointerPosition();
+    const pos = stage.getRelativePointerPosition();
     if (!pos) return;
 
     if (tool === "draw") {
       startDrawing(pos);
+      return;
+    }
+
+    if (isShapeKind(tool)) {
+      startShapeDraw(pos);
+      return;
+    }
+
+    if (tool === "polygon") {
+      if (isDrawingPolygonRef.current) {
+        addPolygonPoint(pos);
+      } else {
+        startPolygon(pos);
+      }
       return;
     }
 
@@ -893,7 +1721,13 @@ export default function MapEditor() {
       setSelectedIds([]);
       isSelectingRef.current = true;
       selectionStartRef.current = pos;
-      selectionRectRef.current?.setAttrs({ x: pos.x, y: pos.y, width: 0, height: 0, visible: true });
+      selectionRectRef.current?.setAttrs({
+        x: pos.x,
+        y: pos.y,
+        width: 0,
+        height: 0,
+        visible: true,
+      });
       selectionRectRef.current?.getLayer()?.batchDraw();
     }
   };
@@ -901,11 +1735,21 @@ export default function MapEditor() {
   const handlePointerMove = () => {
     const stage = stageRef.current;
     if (!stage) return;
-    const pos = stage.getPointerPosition();
+    const pos = stage.getRelativePointerPosition();
     if (!pos) return;
 
     if (tool === "draw" && isDrawingRef.current) {
       continueDrawing(pos);
+      return;
+    }
+
+    if (isShapeKind(tool) && shapeDrawStartRef.current) {
+      updateShapePreview(pos);
+      return;
+    }
+
+    if (tool === "polygon" && isDrawingPolygonRef.current) {
+      updatePolygonRubberBand(pos);
       return;
     }
 
@@ -926,10 +1770,23 @@ export default function MapEditor() {
       return;
     }
 
+    if (isShapeKind(tool) && shapeDrawStartRef.current) {
+      finishShapeDraw();
+      return;
+    }
+
+    if (tool === "polygon") {
+      return;
+    }
+
     if (isSelectingRef.current) {
       isSelectingRef.current = false;
       const box = selectionRectRef.current?.getClientRect();
-      selectionRectRef.current?.setAttrs({ visible: false, width: 0, height: 0 });
+      selectionRectRef.current?.setAttrs({
+        visible: false,
+        width: 0,
+        height: 0,
+      });
       selectionRectRef.current?.getLayer()?.batchDraw();
 
       if (box && (box.width > 2 || box.height > 2)) {
@@ -941,6 +1798,20 @@ export default function MapEditor() {
             matches.push(o.id);
           }
         });
+        lines.forEach((l) => {
+          const node = lineRefs.current.get(l.id);
+          if (!node) return;
+          if (Konva.Util.haveIntersection(box, node.getClientRect())) {
+            matches.push(l.id);
+          }
+        });
+        mapShapes.forEach((s) => {
+          const node = mapShapeRefs.current.get(s.id);
+          if (!node) return;
+          if (Konva.Util.haveIntersection(box, node.getClientRect())) {
+            matches.push(s.id);
+          }
+        });
         setSelectedIds(matches);
       }
     }
@@ -950,30 +1821,16 @@ export default function MapEditor() {
     const stage = stageRef.current;
     if (!stage) return;
 
-    const prevScale = stage.scale();
-    const prevPos = stage.position();
     const prevSelection = [...selectedIds];
-
     transformerRef.current?.nodes([]);
-    stage.scale({ x: 1, y: 1 });
-    stage.position({ x: 0, y: 0 });
     stage.batchDraw();
 
-    const dataUrl = stage.toDataURL({
-      x: 0,
-      y: 0,
-      width: canvasSize.width,
-      height: canvasSize.height,
-      pixelRatio: 2,
-      mimeType: "image/png",
-    });
+    const dataUrl = stage.toDataURL({ pixelRatio: 2, mimeType: "image/png" });
 
-    stage.scale(prevScale);
-    stage.position(prevPos);
     if (prevSelection.length > 0) {
       const nodes = prevSelection
-        .map((id) => shapeRefs.current.get(id))
-        .filter((node): node is Konva.Image => Boolean(node));
+        .map((id) => getNode(id))
+        .filter((node): node is Konva.Node => Boolean(node));
       transformerRef.current?.nodes(nodes);
     }
     stage.batchDraw();
@@ -983,48 +1840,85 @@ export default function MapEditor() {
 
   return (
     <div className="flex min-h-screen flex-col items-center gap-6 bg-zinc-50 px-6 py-10 font-sans dark:bg-black">
-      <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-        Éditeur de carte
-      </h1>
+      <div className="flex items-center gap-4">
+        <Image
+          src="/bicolline.svg"
+          alt="Logo Bicolline"
+          width={60}
+          height={60}
+          className="h-[60px] w-[60px]"
+        />
+        <h1
+          className={`${gadevox.className} text-[40pt] font-semibold text-black dark:text-zinc-50`}
+        >
+          Éditeur de carte
+        </h1>
+      </div>
 
       <div className="flex flex-wrap items-center justify-center gap-4">
-        <label className="cursor-pointer rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]">
-          Image de fond
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleBackgroundChange}
-          />
-        </label>
+        <div ref={uploadMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setIsUploadMenuOpen((prev) => !prev)}
+            className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            <Menu size={16} />
+            Fichiers
+          </button>
 
-        <label className="cursor-pointer rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]">
-          Ajouter une image
-          <input
-            type="file"
-            accept="image/png"
-            multiple
-            className="hidden"
-            onChange={handleAddOverlays}
-          />
-        </label>
+          {isUploadMenuOpen && (
+            <div className="absolute left-0 top-full z-20 mt-2 w-64 rounded-lg border border-black/[.08] bg-white p-1 shadow-lg dark:border-white/[.145] dark:bg-zinc-900">
+              <label className="block cursor-pointer rounded px-3 py-2 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]">
+                Modifier l&apos;image de fond
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleBackgroundChange(e);
+                    setIsUploadMenuOpen(false);
+                  }}
+                />
+              </label>
 
-        <label className="cursor-pointer rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]">
-          <span className="flex items-center gap-2">
-            <Archive size={16} />
-            {isImportingZip ? "Import en cours…" : "Importer un .zip"}
-          </span>
-          <input
-            type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
-            className="hidden"
-            disabled={isImportingZip}
-            onChange={handleZipUpload}
-          />
-        </label>
+              <label className="block cursor-pointer rounded px-3 py-2 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]">
+                Ajouter une image
+                <input
+                  type="file"
+                  accept="image/png"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    handleAddOverlays(e);
+                    setIsUploadMenuOpen(false);
+                  }}
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]">
+                <Archive size={16} />
+                {isImportingZip ? "Import en cours…" : "Importer un .zip"}
+                <input
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  className="hidden"
+                  disabled={isImportingZip}
+                  onChange={(e) => {
+                    handleZipUpload(e);
+                    setIsUploadMenuOpen(false);
+                  }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
 
         <button
-          onClick={() => setIsLibraryOpen(true)}
+          onClick={() => {
+            setLibraryPath(DEFAULT_LIBRARY_FOLDER);
+            setSelectedMediaPaths([]);
+            setIsLibraryOpen(true);
+          }}
           className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
         >
           <Images size={16} />
@@ -1044,29 +1938,6 @@ export default function MapEditor() {
               </option>
             ))}
           </select>
-          <input
-            type="number"
-            min={100}
-            max={4000}
-            value={customWidth}
-            onChange={(e) => setCustomWidth(e.target.value)}
-            className="w-20 rounded border border-black/[.08] bg-white px-2 py-1 dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50"
-          />
-          <span>×</span>
-          <input
-            type="number"
-            min={100}
-            max={4000}
-            value={customHeight}
-            onChange={(e) => setCustomHeight(e.target.value)}
-            className="w-20 rounded border border-black/[.08] bg-white px-2 py-1 dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50"
-          />
-          <button
-            onClick={handleCustomSizeApply}
-            className="rounded-full border border-black/[.08] px-3 py-1 font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
-            Appliquer
-          </button>
         </div>
 
         <button
@@ -1081,8 +1952,125 @@ export default function MapEditor() {
         <p className="text-sm text-red-600 dark:text-red-400">{uploadError}</p>
       )}
 
+      {(tool === "draw" || isShapeKind(tool) || tool === "polygon") && (
+        <div className="flex w-full max-w-[1200px] flex-wrap items-center gap-4 rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-zinc-900">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-600 dark:text-zinc-400">Couleur</span>
+            {DRAW_COLOR_SWATCHES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setDrawColor(c)}
+                aria-label={`Couleur ${c}`}
+                className={`h-6 w-6 rounded-full border-2 ${
+                  drawColor === c ? "border-primary" : "border-transparent"
+                }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <input
+              type="color"
+              value={drawColor}
+              onChange={(e) => setDrawColor(e.target.value)}
+              aria-label="Couleur personnalisée"
+              className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-600 dark:text-zinc-400">Style</span>
+            <select
+              value={drawStyle}
+              onChange={(e) => setDrawStyle(e.target.value as DrawStyle)}
+              className="rounded border border-black/[.08] bg-white px-2 py-1 dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50"
+            >
+              <option value="solid">Plein</option>
+              <option value="dashed">Pointillé</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-600 dark:text-zinc-400">Épaisseur</span>
+            <input
+              type="range"
+              min={1}
+              max={20}
+              value={drawWidth}
+              onChange={(e) => setDrawWidth(Number(e.target.value))}
+              className="w-32"
+            />
+            <span className="w-6 text-right text-zinc-600 dark:text-zinc-400">
+              {drawWidth}
+            </span>
+          </div>
+
+          {tool === "polygon" && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-600 dark:text-zinc-400">
+                  Remplissage
+                </span>
+                {DRAW_COLOR_SWATCHES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setFillColor(c)}
+                    aria-label={`Couleur de remplissage ${c}`}
+                    className={`h-6 w-6 rounded-full border-2 ${
+                      fillColor === c ? "border-primary" : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={fillColor}
+                  onChange={(e) => setFillColor(e.target.value)}
+                  aria-label="Couleur de remplissage personnalisée"
+                  className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-600 dark:text-zinc-400">
+                  Opacité du remplissage
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={fillOpacity}
+                  onChange={(e) => setFillOpacity(Number(e.target.value))}
+                  className="w-32"
+                />
+                <span className="w-10 text-right text-zinc-600 dark:text-zinc-400">
+                  {Math.round(fillOpacity * 100)}%
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="flex w-full max-w-[1200px] items-start justify-center gap-4">
         <div className="flex flex-col gap-2 rounded-xl border border-black/[.08] bg-white p-2 dark:border-white/[.145] dark:bg-zinc-900">
+          <ToolbarButton
+            label={
+              pinLayersToBackground
+                ? "Détacher les calques du fond"
+                : "Fixer les calques au fond"
+            }
+            active={pinLayersToBackground}
+            onClick={() => setPinLayersToBackground((prev) => !prev)}
+          >
+            {pinLayersToBackground ? (
+              <Lock size={18} />
+            ) : (
+              <LockOpen size={18} />
+            )}
+          </ToolbarButton>
+          <div className="my-1 h-px bg-black/[.08] dark:bg-white/[.145]" />
           <ToolbarButton
             label="Sélectionner"
             active={tool === "select"}
@@ -1097,10 +2085,44 @@ export default function MapEditor() {
           >
             <Pencil size={18} />
           </ToolbarButton>
+          <ToolbarButton
+            label="Ligne"
+            active={tool === "line"}
+            onClick={() => handleSetTool("line")}
+          >
+            <Slash size={18} />
+          </ToolbarButton>
+          <ToolbarButton
+            label="Flèche"
+            active={tool === "arrow"}
+            onClick={() => handleSetTool("arrow")}
+          >
+            <ArrowUpRight size={18} />
+          </ToolbarButton>
+          <ToolbarButton
+            label="Polygone"
+            active={tool === "polygon"}
+            onClick={() => handleSetTool("polygon")}
+          >
+            <Pentagon size={18} />
+          </ToolbarButton>
+          <ToolbarButton
+            label="Cercle"
+            active={tool === "circle"}
+            onClick={() => handleSetTool("circle")}
+          >
+            <CircleIcon size={18} />
+          </ToolbarButton>
           <div className="my-1 h-px bg-black/[.08] dark:bg-white/[.145]" />
           <ToolbarButton label="Zoomer" onClick={() => zoomStage(1.2)}>
             <ZoomIn size={18} />
           </ToolbarButton>
+          <div
+            className="select-none text-center text-xs font-medium text-zinc-500 dark:text-zinc-400"
+            title="Niveau de zoom du plan de travail"
+          >
+            {Math.round(zoomMultiplier * 100)}%
+          </div>
           <ToolbarButton label="Dézoomer" onClick={() => zoomStage(1 / 1.2)}>
             <ZoomOut size={18} />
           </ToolbarButton>
@@ -1114,105 +2136,179 @@ export default function MapEditor() {
           </ToolbarButton>
           <ToolbarButton
             label="Supprimer la sélection"
-            onClick={handleDeleteSelected}
+            onClick={deleteSelectedShapes}
             disabled={selectedIds.length === 0}
           >
             <Trash2 size={18} />
           </ToolbarButton>
         </div>
 
-        <div className="max-h-[75vh] max-w-full overflow-auto rounded border border-zinc-300 bg-white dark:border-zinc-700">
-          <Stage
-            ref={stageRef}
-            width={canvasSize.width}
-            height={canvasSize.height}
-            onMouseDown={handlePointerDown}
-            onMouseMove={handlePointerMove}
-            onMouseUp={handlePointerUp}
-            onTouchStart={handlePointerDown}
-            onTouchMove={handlePointerMove}
-            onTouchEnd={handlePointerUp}
+        <div ref={stageContainerRef} className="w-full max-w-[900px]">
+          <div
+            className="mx-auto overflow-hidden rounded border border-zinc-300 bg-white dark:border-zinc-700"
+            style={{ width: displayWidth, height: displayHeight }}
           >
-            <Layer>
-              <Rect
-                x={0}
-                y={0}
-                width={canvasSize.width}
-                height={canvasSize.height}
-                fill="#e4e4e7"
-                name="canvas-backdrop"
-              />
-              {backgroundSrc && (
-                <BackgroundImage
-                  src={backgroundSrc}
-                  imageRef={bgImageRef}
-                  draggable={tool === "select"}
-                  canvasSize={canvasSize}
+            <Stage
+              ref={stageRef}
+              width={displayWidth}
+              height={displayHeight}
+              scaleX={totalStageScale}
+              scaleY={totalStageScale}
+              x={stagePosX}
+              y={stagePosY}
+              onMouseDown={handlePointerDown}
+              onMouseMove={handlePointerMove}
+              onMouseUp={handlePointerUp}
+              onTouchStart={handlePointerDown}
+              onTouchMove={handlePointerMove}
+              onTouchEnd={handlePointerUp}
+            >
+              <Layer>
+                <Rect
+                  x={0}
+                  y={0}
+                  width={canvasSize.width}
+                  height={canvasSize.height}
+                  fill="#e4e4e7"
+                  name="canvas-backdrop"
                 />
-              )}
-              {overlays.map((shape) => (
-                <OverlayImage
-                  key={shape.id}
-                  shape={shape}
-                  selectedIds={selectedIds}
-                  draggable={tool === "select"}
-                  onSelect={handleOverlaySelect}
-                  onChange={(attrs) => handleOverlayChange(shape.id, attrs)}
-                  setShapeRef={setShapeRef}
-                  getNode={getNode}
-                  dragOriginRef={dragOriginRef}
-                  onCommitGroupMove={handleCommitGroupMove}
-                />
-              ))}
-              {lines.map((line) => (
+                {backgroundSrc && (
+                  <BackgroundImage
+                    src={backgroundSrc}
+                    imageRef={bgImageRef}
+                    draggable={tool === "select"}
+                    canvasSize={canvasSize}
+                    pinLayers={pinLayersToBackground}
+                    getAllLayerEntries={getAllLayerEntries}
+                    onCommitPan={handleCommitGroupMove}
+                  />
+                )}
+                {overlays.map((shape) => (
+                  <OverlayImage
+                    key={shape.id}
+                    shape={shape}
+                    selectedIds={selectedIds}
+                    draggable={tool === "select"}
+                    onSelect={handleOverlaySelect}
+                    onChange={(attrs) => handleOverlayChange(shape.id, attrs)}
+                    setShapeRef={setShapeRef}
+                    getNode={getNode}
+                    dragOriginRef={dragOriginRef}
+                    onCommitGroupMove={handleCommitGroupMove}
+                  />
+                ))}
+                {lines.map((line) => (
+                  <LineShape
+                    key={line.id}
+                    shape={line}
+                    selectedIds={selectedIds}
+                    draggable={tool === "select"}
+                    onSelect={handleOverlaySelect}
+                    onChange={(attrs) => handleLineChange(line.id, attrs)}
+                    setLineRef={setLineRef}
+                    getNode={getNode}
+                    dragOriginRef={dragOriginRef}
+                    onCommitGroupMove={handleCommitGroupMove}
+                  />
+                ))}
+                {mapShapes.map((shape) => (
+                  <MapShapeItem
+                    key={shape.id}
+                    shape={shape}
+                    selectedIds={selectedIds}
+                    draggable={tool === "select"}
+                    onSelect={handleOverlaySelect}
+                    onChange={(attrs) => handleMapShapeChange(shape.id, attrs)}
+                    setShapeItemRef={setMapShapeRef}
+                    getNode={getNode}
+                    dragOriginRef={dragOriginRef}
+                    onCommitGroupMove={handleCommitGroupMove}
+                  />
+                ))}
                 <Line
-                  key={line.id}
-                  points={line.points}
-                  stroke="#1c1c1c"
-                  strokeWidth={3}
+                  ref={previewLineRef}
+                  points={EMPTY_POINTS}
+                  stroke={drawColor}
+                  strokeWidth={drawWidth}
+                  dash={getDashPattern(drawStyle, drawWidth)}
+                  visible={false}
+                  listening={false}
+                />
+                <Arrow
+                  ref={previewArrowRef}
+                  points={EMPTY_POINTS}
+                  stroke={drawColor}
+                  fill={drawColor}
+                  strokeWidth={drawWidth}
+                  dash={getDashPattern(drawStyle, drawWidth)}
+                  pointerLength={12}
+                  pointerWidth={12}
+                  visible={false}
+                  listening={false}
+                />
+                <Circle
+                  ref={previewCircleRef}
+                  stroke={drawColor}
+                  strokeWidth={drawWidth}
+                  dash={getDashPattern(drawStyle, drawWidth)}
+                  fillEnabled={false}
+                  visible={false}
+                  listening={false}
+                />
+                <Line
+                  ref={previewPolygonRef}
+                  points={EMPTY_POINTS}
+                  stroke={drawColor}
+                  strokeWidth={drawWidth}
+                  dash={getDashPattern(drawStyle, drawWidth)}
+                  closed
+                  fill={hexToRgba(fillColor, fillOpacity)}
+                  lineJoin="round"
+                  visible={false}
+                  listening={false}
+                />
+                <Line
+                  ref={drawingLineRef}
+                  points={EMPTY_POINTS}
+                  stroke={drawColor}
+                  strokeWidth={drawWidth}
+                  dash={getDashPattern(drawStyle, drawWidth)}
                   tension={0}
                   lineCap="round"
                   lineJoin="round"
+                  visible={false}
                   listening={false}
                 />
-              ))}
-              <Line
-                ref={drawingLineRef}
-                points={[]}
-                stroke="#1c1c1c"
-                strokeWidth={3}
-                tension={0}
-                lineCap="round"
-                lineJoin="round"
-                visible={false}
-                listening={false}
-              />
-              <Transformer
-                ref={transformerRef}
-                rotateEnabled
-                anchorSize={8}
-                borderStroke="#0e4fa7"
-                anchorStroke="#0e4fa7"
-                anchorFill="#ffffff"
-              />
-              <Rect
-                ref={selectionRectRef}
-                visible={false}
-                fill="rgba(14,79,167,0.15)"
-                stroke="#0e4fa7"
-                strokeWidth={1}
-                listening={false}
-              />
-            </Layer>
-          </Stage>
+                <Transformer
+                  ref={transformerRef}
+                  rotateEnabled
+                  anchorSize={8}
+                  borderStroke="#0e4fa7"
+                  anchorStroke="#0e4fa7"
+                  anchorFill="#ffffff"
+                />
+                <Rect
+                  ref={selectionRectRef}
+                  visible={false}
+                  fill="rgba(14,79,167,0.15)"
+                  stroke="#0e4fa7"
+                  strokeWidth={1}
+                  listening={false}
+                />
+              </Layer>
+            </Stage>
+          </div>
         </div>
       </div>
 
       <p className="max-w-2xl text-center text-sm text-zinc-500 dark:text-zinc-400">
-        Molette sur l&apos;image de fond pour zoomer, glisser pour la déplacer.
-        Cliquez une image pour la sélectionner (Maj+clic pour en ajouter
-        plusieurs, ou glissez sur une zone vide pour un rectangle de
-        sélection). Supprimer/Retour arrière efface la sélection.
+        Glisser l&apos;image de fond pour la déplacer. Utilisez les boutons +/-
+        pour zoomer. Cliquez une image pour la sélectionner (Maj+clic pour en
+        ajouter plusieurs, ou glissez sur une zone vide pour un rectangle de
+        sélection). Supprimer/Retour arrière efface la sélection. Le zoom du
+        plan de travail (+/-) sert à cadrer : l&apos;export capture exactement
+        ce qui est visible à l&apos;écran. Pour l&apos;outil Polygone : cliquez
+        pour ajouter chaque point, Entrée pour terminer, Échap pour annuler.
       </p>
 
       {isLibraryOpen && (
@@ -1220,13 +2316,20 @@ export default function MapEditor() {
           entries={libraryEntries}
           currentPath={libraryPath}
           isLoading={isLoadingLibrary}
-          onClose={() => setIsLibraryOpen(false)}
+          selectedPaths={selectedMediaPaths}
+          onClose={() => {
+            setIsLibraryOpen(false);
+            setSelectedMediaPaths([]);
+          }}
           onEnterFolder={handleEnterFolder}
           onGoBack={handleGoBackInLibrary}
-          onUseAsBackground={handleUseLibraryAsBackground}
           onAddAsOverlay={handleAddLibraryOverlay}
           onDeleteFile={handleDeleteFile}
           onDeleteFolder={handleDeleteFolder}
+          onToggleSelect={handleToggleMediaSelect}
+          onClearSelection={handleClearMediaSelection}
+          onBulkAddOverlay={handleBulkAddOverlay}
+          onBulkDelete={handleBulkDeleteMedia}
         />
       )}
 
