@@ -376,7 +376,7 @@ export default function UtilisateursPage() {
                 {users.map((user) => (
                   <tr
                     key={user.id}
-                    className="border-b border-black/[.06] dark:border-white/[.06]"
+                    className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
                   >
                     <td className="py-2 pr-4 text-foreground">
                       {[user.first_name, user.last_name]

@@ -1,15 +1,35 @@
 "use client";
 
-import { Feather, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Feather,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import RequireFeature from "@/components/require-feature";
 import {
   ACTIVITY_CATEGORIES,
+  ACTIVITY_CATEGORY_STYLES,
   type Activity,
   type ActivityInput,
 } from "@/lib/activities";
 import { supabase } from "@/lib/supabase";
+
+function formatActivityDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+type SortDirection = "asc" | "desc";
 
 function ActivityModal({
   initial,
@@ -151,6 +171,9 @@ function ActivitesContent() {
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchActivities = async () => {
     setIsLoading(true);
@@ -185,6 +208,19 @@ function ActivitesContent() {
     setActivities((prev) => prev.filter((a) => a.id !== activity.id));
   };
 
+  const toggleSortDirection = () => {
+    setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+  };
+
+  const query = searchQuery.trim().toLowerCase();
+  const visibleActivities = activities
+    .filter((a) => !categoryFilter || a.category === categoryFilter)
+    .filter((a) => !query || a.name.toLowerCase().includes(query))
+    .sort((a, b) => {
+      const cmp = a.date.localeCompare(b.date);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+
   return (
     <div>
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
@@ -196,87 +232,144 @@ function ActivitesContent() {
       </p>
 
       <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-foreground">
-            Activités planifiées
-          </h2>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
-          >
-            <Plus size={16} />
-            Créer une activité
-          </button>
-        </div>
+        <h2 className="mb-4 font-semibold text-foreground">
+          Activités planifiées
+        </h2>
 
         {isLoading && <p className="text-sm text-foreground/60">Chargement…</p>}
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
 
-        {!isLoading && !error && activities.length === 0 && (
-          <p className="text-sm text-foreground/60">
-            Aucune activité pour l&apos;instant.
-          </p>
-        )}
+        {!isLoading && !error && (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40"
+                  />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Rechercher par nom…"
+                    className="w-56 rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                  />
+                </div>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="rounded-full border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                >
+                  <option value="">Toutes les catégories</option>
+                  {ACTIVITY_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setIsCreateOpen(true)}
+                className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
+              >
+                <Plus size={16} />
+                Créer une activité
+              </button>
+            </div>
 
-        {!isLoading && !error && activities.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
-                  <th className="py-2 pr-4 font-medium">Nom</th>
-                  <th className="py-2 pr-4 font-medium">Date</th>
-                  <th className="py-2 pr-4 font-medium">Catégorie</th>
-                  <th className="py-2 pr-4 font-medium">Fronts</th>
-                  <th className="py-2 pr-4 font-medium">Participants/front</th>
-                  <th className="py-2 pr-4 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activities.map((activity) => (
-                  <tr
-                    key={activity.id}
-                    className="border-b border-black/[.06] dark:border-white/[.06]"
-                  >
-                    <td className="py-2 pr-4 text-foreground">
-                      {activity.name}
-                    </td>
-                    <td className="py-2 pr-4 text-foreground/80">
-                      {new Date(activity.date).toLocaleDateString("fr-CA")}
-                    </td>
-                    <td className="py-2 pr-4 text-foreground/80">
-                      {activity.category}
-                    </td>
-                    <td className="py-2 pr-4 text-foreground/80">
-                      {activity.number_of_fronts}
-                    </td>
-                    <td className="py-2 pr-4 text-foreground/80">
-                      {activity.participants_per_front}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <div className="flex items-center gap-1">
+            {activities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune activité pour l&apos;instant.
+              </p>
+            )}
+
+            {activities.length > 0 && visibleActivities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune activité ne correspond à ces critères.
+              </p>
+            )}
+
+            {visibleActivities.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                      <th className="py-2 pr-4 font-medium">Nom</th>
+                      <th className="py-2 pr-4 font-medium">
                         <button
-                          onClick={() => setEditingActivity(activity)}
-                          aria-label="Modifier"
-                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                          type="button"
+                          onClick={toggleSortDirection}
+                          className="flex items-center gap-1 hover:text-foreground"
                         >
-                          <Feather size={16} />
+                          Date
+                          {sortDirection === "asc" ? (
+                            <ChevronUp size={14} />
+                          ) : (
+                            <ChevronDown size={14} />
+                          )}
                         </button>
-                        <button
-                          onClick={() => handleDelete(activity)}
-                          aria-label="Supprimer"
-                          className="rounded-full p-2 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </th>
+                      <th className="py-2 pr-4 font-medium">Catégorie</th>
+                      <th className="py-2 pr-4 font-medium">Fronts</th>
+                      <th className="py-2 pr-4 font-medium">
+                        Participants/front
+                      </th>
+                      <th className="py-2 pr-4 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleActivities.map((activity) => (
+                      <tr
+                        key={activity.id}
+                        className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
+                      >
+                        <td className="py-2 pr-4 text-foreground">
+                          {activity.name}
+                        </td>
+                        <td className="py-2 pr-4 text-foreground/80">
+                          {formatActivityDate(activity.date)}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span
+                            className={`rounded-full px-2 py-1 text-xs font-medium ${ACTIVITY_CATEGORY_STYLES[activity.category]}`}
+                          >
+                            {activity.category}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-4 text-foreground/80">
+                          {activity.number_of_fronts}
+                        </td>
+                        <td className="py-2 pr-4 text-foreground/80">
+                          {activity.participants_per_front}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingActivity(activity)}
+                              aria-label="Modifier"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Feather size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(activity)}
+                              aria-label="Supprimer"
+                              className="rounded-full p-2 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -57,6 +57,8 @@ function isShapeKind(tool: Tool): tool is DragShapeKind {
   return (SHAPE_TOOLS as Tool[]).includes(tool);
 }
 
+type LogoColor = "black" | "white";
+
 type OverlayShape = {
   id: string;
   src: string;
@@ -65,6 +67,7 @@ type OverlayShape = {
   width: number;
   height: number;
   rotation: number;
+  logoColor?: LogoColor;
 };
 
 type DrawStyle = "solid" | "dashed";
@@ -123,6 +126,12 @@ const MIN_STAGE_SCALE = 0.2;
 const MAX_STAGE_SCALE = 4;
 const OVERLAY_SCALE = 0.25;
 const BACKGROUND_SCALE = 3;
+const LOGO_SRC_BY_COLOR: Record<LogoColor, string> = {
+  black: "/bicolline-logo-black.svg",
+  white: "/bicolline-logo-white.svg",
+};
+const LOGO_MARGIN = 24;
+const LOGO_MAX_WIDTH = 90;
 const DEFAULT_BACKGROUND_URL =
   "https://cfduycvxggikaxjilbkf.supabase.co/storage/v1/object/public/media/37e4ab42-762e-4453-9542-7d5204beb886.jpg";
 
@@ -1269,6 +1278,35 @@ export default function MapEditor() {
     setOverlays((prev) => [...prev, ...newOverlays]);
   };
 
+  const handleAddLogo = async (color: LogoColor) => {
+    const src = LOGO_SRC_BY_COLOR[color];
+    const { width, height } = await getImageSize(src);
+    const scale = Math.min(1, LOGO_MAX_WIDTH / width);
+    const w = width * scale;
+    const h = height * scale;
+
+    setOverlays((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        src,
+        x: canvasSize.width - w - LOGO_MARGIN,
+        y: canvasSize.height - h - LOGO_MARGIN,
+        width: w,
+        height: h,
+        rotation: 0,
+        logoColor: color,
+      },
+    ]);
+  };
+
+  const handleSetLogoColor = (id: string, color: LogoColor) => {
+    handleOverlayChange(id, {
+      src: LOGO_SRC_BY_COLOR[color],
+      logoColor: color,
+    });
+  };
+
   const handleAddOverlays = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     e.target.value = "";
@@ -1836,6 +1874,11 @@ export default function MapEditor() {
     downloadDataUrl(dataUrl, "carte.png");
   };
 
+  const selectedLogoOverlay =
+    selectedIds.length === 1
+      ? overlays.find((o) => o.id === selectedIds[0] && o.logoColor)
+      : undefined;
+
   return (
     <div className="flex flex-1 flex-col items-center gap-6 bg-background px-6 py-4 font-sans">
       <div className="flex flex-wrap items-center justify-center gap-4">
@@ -1877,6 +1920,17 @@ export default function MapEditor() {
                   }}
                 />
               </label>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddLogo("black");
+                  setIsUploadMenuOpen(false);
+                }}
+                className="block w-full rounded px-3 py-2 text-left text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+              >
+                Afficher le logo Bicolline
+              </button>
 
               <label className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.08]">
                 <Archive size={16} />
@@ -2033,6 +2087,32 @@ export default function MapEditor() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {selectedLogoOverlay && (
+        <div className="flex items-center gap-2 rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-zinc-900">
+          <span className="text-zinc-600 dark:text-zinc-400">
+            Couleur du logo
+          </span>
+          <button
+            type="button"
+            onClick={() => handleSetLogoColor(selectedLogoOverlay.id, "black")}
+            aria-label="Logo noir"
+            className={`h-6 w-6 rounded-full border-2 bg-black ${
+              selectedLogoOverlay.logoColor === "black"
+                ? "border-primary"
+                : "border-transparent"
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => handleSetLogoColor(selectedLogoOverlay.id, "white")}
+            aria-label="Logo blanc"
+            className={`h-6 w-6 rounded-full border-2 border-zinc-300 bg-white ${
+              selectedLogoOverlay.logoColor === "white" ? "border-primary" : ""
+            }`}
+          />
         </div>
       )}
 
