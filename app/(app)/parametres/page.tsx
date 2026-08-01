@@ -28,6 +28,13 @@ import {
   type Quartier,
 } from "@/lib/quartiers";
 import { supabase } from "@/lib/supabase";
+import {
+  createTaskType,
+  deleteTaskType,
+  listTaskTypes,
+  renameTaskType,
+  type TaskType,
+} from "@/lib/task-types";
 
 async function getAuthToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
@@ -556,6 +563,150 @@ function QuartiersSettings() {
   );
 }
 
+function TaskTypesSettings() {
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTaskTypes = async () => {
+    setTaskTypes(await listTaskTypes());
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchTaskTypes resolves before the loading flag is cleared
+    fetchTaskTypes().finally(() => setIsLoading(false));
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setError(null);
+    try {
+      await createTaskType(newName.trim());
+      setNewName("");
+      await fetchTaskTypes();
+    } catch {
+      setError("Échec de la création.");
+    }
+  };
+
+  const handleRename = async (id: string) => {
+    if (!editingName.trim()) return;
+    setError(null);
+    try {
+      await renameTaskType(id, editingName.trim());
+      setEditingId(null);
+      await fetchTaskTypes();
+    } catch {
+      setError("Échec de la modification.");
+    }
+  };
+
+  const handleDelete = async (taskType: TaskType) => {
+    if (!window.confirm(`Supprimer le type de tâche "${taskType.name}" ?`))
+      return;
+    try {
+      await deleteTaskType(taskType.id);
+      setTaskTypes((prev) => prev.filter((t) => t.id !== taskType.id));
+    } catch {
+      setError("Échec de la suppression.");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <h2 className="font-semibold text-foreground">Types de tâche</h2>
+      <p className="mt-1 text-sm text-foreground/60">
+        Liste réutilisable dans l&apos;onglet Tâches du module Maréchaux.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {taskTypes.length === 0 && (
+            <p className="text-sm text-foreground/60">
+              Aucun type de tâche pour l&apos;instant.
+            </p>
+          )}
+          {taskTypes.map((t) =>
+            editingId === t.id ? (
+              <div
+                key={t.id}
+                className="flex items-center gap-1 rounded-full border border-black/[.08] py-1 pl-3 pr-1 dark:border-white/[.145]"
+              >
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  className="w-28 rounded border border-black/[.08] bg-white px-2 py-0.5 text-xs text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRename(t.id)}
+                  className="px-1 text-xs font-medium text-primary hover:underline"
+                >
+                  OK
+                </button>
+              </div>
+            ) : (
+              <div
+                key={t.id}
+                className="flex items-center gap-1 rounded-full border border-black/[.08] py-1 pl-3 pr-1 text-xs text-foreground dark:border-white/[.145]"
+              >
+                {t.name}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(t.id);
+                    setEditingName(t.name);
+                  }}
+                  aria-label="Modifier"
+                  className="rounded-full p-1 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                >
+                  <Feather size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(t)}
+                  aria-label="Supprimer"
+                  className="rounded-full p-1 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+
+      <form onSubmit={handleCreate} className="mt-3 flex items-center gap-2">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Nouveau type de tâche…"
+          className="w-64 rounded-full border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
+        <button
+          type="submit"
+          className="rounded-full bg-primary p-1.5 text-white transition-colors hover:bg-[#0c4390]"
+        >
+          <Plus size={16} />
+        </button>
+      </form>
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
 export default function ParametresPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -590,6 +741,7 @@ export default function ParametresPage() {
           />
           <BattlefieldsSettings />
           <QuartiersSettings />
+          <TaskTypesSettings />
         </div>
       ) : (
         <p className="mt-2 text-foreground/70">À venir.</p>

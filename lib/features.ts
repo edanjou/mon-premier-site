@@ -25,6 +25,7 @@ export const MODULES: ModuleDefinition[] = [
   { key: "scenarios", label: "Scénarios", hasScenaristeTier: true },
   { key: "jeu", label: "Jeu", hasScenaristeTier: false },
   { key: "homologation", label: "Homologation", hasScenaristeTier: false },
+  { key: "marechaux", label: "Maréchaux", hasScenaristeTier: false },
 ];
 
 export function scenaristeKey(moduleKey: string): string {

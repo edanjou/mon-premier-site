@@ -250,7 +250,7 @@ function ToolbarButton({
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={`flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
+        className={`toolbar-button flex h-10 w-10 items-center justify-center rounded-lg border transition-colors ${
           active
             ? "border-primary bg-primary text-white"
             : "border-black/[.08] bg-white text-black hover:bg-black/[.04] dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-[#1a1a1a]"

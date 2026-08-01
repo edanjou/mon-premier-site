@@ -25,6 +25,7 @@ import {
   Hammer,
   LogOut,
   MapPinned,
+  PocketKnife,
   ScrollText,
   Shield,
   ShieldUser,
@@ -59,6 +60,7 @@ const ALL_MODULE_ITEMS: NavItem[] = [
   { href: "/scenarios", label: "Scénarios", icon: ScrollText },
   { href: "/jeu", label: "Jeu", icon: ChessKnight },
   { href: "/homologation", label: "Homologation", icon: BadgeCheck },
+  { href: "/marechaux", label: "Maréchaux", icon: PocketKnife },
   { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
 ];
 

@@ -121,7 +121,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={isLoading}
-        className="mt-1 rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 self-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isLoading
           ? "…"
@@ -136,7 +136,7 @@ export default function LoginForm() {
           setError(null);
           setMessage(null);
         }}
-        className="text-xs text-foreground/60 hover:underline"
+        className="link-button text-xs text-foreground/60 hover:underline"
       >
         {mode === "login"
           ? "Mot de passe oublié ?"

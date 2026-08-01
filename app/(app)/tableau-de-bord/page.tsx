@@ -22,6 +22,7 @@ import {
   BadgeCheck,
   ChessKnight,
   MapPinned,
+  PocketKnife,
   ScrollText,
   Shield,
   Swords,
@@ -49,6 +50,7 @@ const ALL_MODULES: ModuleItem[] = [
   { href: "/scenarios", label: "Scénarios", icon: ScrollText },
   { href: "/jeu", label: "Jeu", icon: ChessKnight },
   { href: "/homologation", label: "Homologation", icon: BadgeCheck },
+  { href: "/marechaux", label: "Maréchaux", icon: PocketKnife },
   { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
 ];
 

@@ -28,7 +28,8 @@ const inputClassName =
   "w-64 rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800";
 const rowClassName =
   "border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]";
-const linkClassName = "text-primary underline-offset-2 hover:underline";
+const linkClassName =
+  "link-button text-primary underline-offset-2 hover:underline";
 
 function SearchInput({
   value,
