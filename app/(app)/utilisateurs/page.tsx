@@ -4,7 +4,14 @@ import { Feather, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
-import { FEATURES } from "@/lib/features";
+import { Pagination, usePagination } from "@/components/pagination";
+import {
+  MODULES,
+  moduleAccessLevel,
+  scenaristeKey,
+  type ModuleAccessLevel,
+  type ModuleDefinition,
+} from "@/lib/features";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 
@@ -294,6 +301,40 @@ export default function UtilisateursPage() {
     );
   };
 
+  const handleSetModuleLevel = async (
+    userId: string,
+    mod: ModuleDefinition,
+    level: ModuleAccessLevel,
+  ) => {
+    const sKey = scenaristeKey(mod.key);
+    await Promise.all([
+      supabase
+        .from("permissions")
+        .upsert(
+          { user_id: userId, feature: mod.key, granted: level === "gestionnaire" },
+          { onConflict: "user_id,feature" },
+        ),
+      supabase
+        .from("permissions")
+        .upsert(
+          { user_id: userId, feature: sKey, granted: level === "scenariste" },
+          { onConflict: "user_id,feature" },
+        ),
+    ]);
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
+        const nextPermissions = u.permissions
+          .filter((p) => p.feature !== mod.key && p.feature !== sKey)
+          .concat([
+            { feature: mod.key, granted: level === "gestionnaire" },
+            { feature: sKey, granted: level === "scenariste" },
+          ]);
+        return { ...u, permissions: nextPermissions };
+      }),
+    );
+  };
+
   const handleDelete = async (user: AdminUser) => {
     if (
       !window.confirm(
@@ -320,6 +361,8 @@ export default function UtilisateursPage() {
     setUsers((prev) => prev.filter((u) => u.id !== user.id));
   };
 
+  const { page, pageCount, setPage, pageItems } = usePagination(users);
+
   if (isChecking) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -333,9 +376,6 @@ export default function UtilisateursPage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Utilisateurs
       </h1>
-      <p className="mt-2 text-foreground/70">
-        Créer des comptes et gérer les permissions par fonctionnalité.
-      </p>
 
       <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
         <div className="mb-4 flex items-center justify-between">
@@ -358,22 +398,22 @@ export default function UtilisateursPage() {
 
         {!isLoadingUsers && !listError && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
                   <th className="py-2 pr-4 font-medium">Nom</th>
                   <th className="py-2 pr-4 font-medium">Email</th>
                   <th className="py-2 pr-4 font-medium">Rôle</th>
-                  {FEATURES.map((feature) => (
-                    <th key={feature.key} className="py-2 pr-4 font-medium">
-                      {feature.label}
+                  {MODULES.map((mod) => (
+                    <th key={mod.key} className="py-2 pr-4 font-medium">
+                      {mod.label}
                     </th>
                   ))}
                   <th className="py-2 pr-4 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {pageItems.map((user) => (
                   <tr
                     key={user.id}
                     className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
@@ -401,30 +441,61 @@ export default function UtilisateursPage() {
                         <option value="admin">Admin</option>
                       </select>
                     </td>
-                    {FEATURES.map((feature) => {
-                      const granted =
-                        user.permissions.find((p) => p.feature === feature.key)
-                          ?.granted ?? false;
+                    {MODULES.map((mod) => {
+                      if (!mod.hasScenaristeTier) {
+                        const granted =
+                          user.permissions.find((p) => p.feature === mod.key)
+                            ?.granted ?? false;
+                        return (
+                          <td key={mod.key} className="py-2 pr-4">
+                            <input
+                              type="checkbox"
+                              checked={user.role === "admin" || granted}
+                              disabled={user.role === "admin"}
+                              onChange={(e) =>
+                                handleTogglePermission(
+                                  user.id,
+                                  mod.key,
+                                  e.target.checked,
+                                )
+                              }
+                              className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        );
+                      }
+                      const granted = new Set(
+                        user.permissions
+                          .filter((p) => p.granted)
+                          .map((p) => p.feature),
+                      );
+                      const level =
+                        user.role === "admin"
+                          ? "gestionnaire"
+                          : moduleAccessLevel(mod, granted);
                       return (
-                        <td key={feature.key} className="py-2 pr-4">
-                          <input
-                            type="checkbox"
-                            checked={user.role === "admin" || granted}
+                        <td key={mod.key} className="py-2 pr-4">
+                          <select
+                            value={level}
                             disabled={user.role === "admin"}
                             onChange={(e) =>
-                              handleTogglePermission(
+                              handleSetModuleLevel(
                                 user.id,
-                                feature.key,
-                                e.target.checked,
+                                mod,
+                                e.target.value as ModuleAccessLevel,
                               )
                             }
-                            className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
-                          />
+                            className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
+                          >
+                            <option value="none">Aucun accès</option>
+                            <option value="gestionnaire">Gestionnaire</option>
+                            <option value="scenariste">Scénariste</option>
+                          </select>
                         </td>
                       );
                     })}
                     <td className="py-2 pr-4">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => setEditingUser(user)}
                           aria-label="Modifier"
@@ -436,7 +507,7 @@ export default function UtilisateursPage() {
                           onClick={() => handleDelete(user)}
                           disabled={user.id === currentUserId}
                           aria-label="Supprimer"
-                          className="rounded-full p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-red-400 dark:hover:bg-red-950"
+                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/[.08]"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -446,6 +517,11 @@ export default function UtilisateursPage() {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              onPageChange={setPage}
+            />
           </div>
         )}
       </div>

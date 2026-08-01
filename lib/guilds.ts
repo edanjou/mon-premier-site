@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { decodeHtmlEntities } from "@/lib/text";
 
 export type Guild = {
   external_id: number;
@@ -16,5 +17,5 @@ export async function listGuilds(): Promise<Guild[]> {
     .order("name", { ascending: true });
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((g) => ({ ...g, name: decodeHtmlEntities(g.name) }));
 }

@@ -3,6 +3,7 @@
 import { Hourglass, Search, Stamp, User, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
 import { searchCharacters, type Character } from "@/lib/characters";
 import { listGuilds, type Guild } from "@/lib/guilds";
@@ -71,9 +72,15 @@ function GuildesTab({
       .finally(() => setIsLoading(false));
   }, []);
 
-  const visible = guilds.filter((g) =>
-    g.name.toLowerCase().includes(query.toLowerCase()),
+  const q = query.toLowerCase();
+  const visible = guilds.filter(
+    (g) =>
+      g.name.toLowerCase().includes(q) ||
+      String(g.member_count ?? "").includes(q) ||
+      String(g.presence_count ?? "").includes(q) ||
+      (g.is_faction ? "oui" : "non").includes(q),
   );
+  const { page, pageCount, setPage, pageItems } = usePagination(visible);
 
   if (isLoading)
     return <p className="text-sm text-foreground/60">Chargement…</p>;
@@ -101,7 +108,7 @@ function GuildesTab({
             </tr>
           </thead>
           <tbody>
-            {visible.map((g) => (
+            {pageItems.map((g) => (
               <tr key={g.external_id} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground">{g.name}</td>
                 <td className="py-2 pr-4 text-foreground/80">
@@ -118,6 +125,7 @@ function GuildesTab({
           </tbody>
         </table>
       </div>
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
     </div>
   );
 }
@@ -133,9 +141,14 @@ function SceauxTab({ onGuildClick }: { onGuildClick: (name: string) => void }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const visible = seals.filter((s) =>
-    (s.guilds?.name ?? "").toLowerCase().includes(query.toLowerCase()),
+  const sealsQuery = query.toLowerCase();
+  const visible = seals.filter(
+    (s) =>
+      (s.guilds?.name ?? "").toLowerCase().includes(sealsQuery) ||
+      s.seal_type.toLowerCase().includes(sealsQuery) ||
+      s.status.toLowerCase().includes(sealsQuery),
   );
+  const { page, pageCount, setPage, pageItems } = usePagination(visible);
 
   if (isLoading)
     return <p className="text-sm text-foreground/60">Chargement…</p>;
@@ -162,7 +175,7 @@ function SceauxTab({ onGuildClick }: { onGuildClick: (name: string) => void }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((s) => (
+            {pageItems.map((s) => (
               <tr key={s.external_id} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground">
                   {s.guilds?.name ? (
@@ -184,9 +197,13 @@ function SceauxTab({ onGuildClick }: { onGuildClick: (name: string) => void }) {
           </tbody>
         </table>
       </div>
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
     </div>
   );
 }
+
+const selectClassName =
+  "rounded-full border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800";
 
 function PersonnagesTab({
   query,
@@ -200,11 +217,20 @@ function PersonnagesTab({
   const [results, setResults] = useState<Character[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [guilds, setGuilds] = useState<Guild[]>([]);
+  const [religions, setReligions] = useState<Religion[]>([]);
+  const [guildFilter, setGuildFilter] = useState("");
+  const [religionFilter, setReligionFilter] = useState("");
+
+  useEffect(() => {
+    listGuilds().then(setGuilds);
+    listReligions().then(setReligions);
+  }, []);
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing results synchronously when the search box is emptied
+    if (!trimmed && !guildFilter && !religionFilter) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing results synchronously when the search box and filters are empty
       setResults([]);
       setHasSearched(false);
       return;
@@ -212,7 +238,10 @@ function PersonnagesTab({
 
     const handle = setTimeout(() => {
       setIsSearching(true);
-      searchCharacters(trimmed)
+      searchCharacters(trimmed, {
+        guildId: guildFilter ? Number(guildFilter) : null,
+        religionName: religionFilter || null,
+      })
         .then((data) => {
           setResults(data);
           setHasSearched(true);
@@ -221,16 +250,44 @@ function PersonnagesTab({
     }, 300);
 
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, guildFilter, religionFilter]);
+
+  const { page, pageCount, setPage, pageItems } = usePagination(results);
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <SearchInput
-          value={query}
-          onChange={onQueryChange}
-          placeholder="Rechercher un personnage ou un joueur…"
-        />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput
+            value={query}
+            onChange={onQueryChange}
+            placeholder="Rechercher un personnage ou un joueur…"
+          />
+          <select
+            value={guildFilter}
+            onChange={(e) => setGuildFilter(e.target.value)}
+            className={selectClassName}
+          >
+            <option value="">Toutes les guildes</option>
+            {guilds.map((g) => (
+              <option key={g.external_id} value={g.external_id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={religionFilter}
+            onChange={(e) => setReligionFilter(e.target.value)}
+            className={selectClassName}
+          >
+            <option value="">Toutes les croyances</option>
+            {religions.map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
         {hasSearched && (
           <span className="text-sm text-foreground/60">
             {results.length} résultat{results.length > 1 ? "s" : ""}
@@ -238,60 +295,68 @@ function PersonnagesTab({
         )}
       </div>
 
-      {!query.trim() && (
+      {!query.trim() && !guildFilter && !religionFilter && (
         <p className="text-sm text-foreground/60">
-          Tape un nom pour rechercher parmi les 10 093 personnages.
+          Tape un nom ou choisis une guilde/croyance pour rechercher parmi les
+          10 093 personnages.
         </p>
       )}
       {isSearching && <p className="text-sm text-foreground/60">Recherche…</p>}
 
       {!isSearching && hasSearched && results.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
-                <th className="py-2 pr-4 font-medium">Nom</th>
-                <th className="py-2 pr-4 font-medium">Guilde</th>
-                <th className="py-2 pr-4 font-medium">Croyance</th>
-                <th className="py-2 pr-4 font-medium">PNJ</th>
-                <th className="py-2 pr-4 font-medium">Joueur</th>
-                <th className="py-2 pr-4 font-medium">Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((c) => (
-                <tr key={c.external_id} className={rowClassName}>
-                  <td className="py-2 pr-4 text-foreground">{c.name}</td>
-                  <td className="py-2 pr-4 text-foreground/80">
-                    {c.guilds?.name ? (
-                      <button
-                        type="button"
-                        onClick={() => onGuildClick(c.guilds!.name)}
-                        className={linkClassName}
-                      >
-                        {c.guilds.name}
-                      </button>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-foreground/80">
-                    {c.religion_name ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-foreground/80">
-                    {c.is_npc ? "Oui" : "Non"}
-                  </td>
-                  <td className="py-2 pr-4 text-foreground/80">
-                    {c.player_name ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-foreground/80">
-                    {c.player_email ?? "—"}
-                  </td>
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                  <th className="py-2 pr-4 font-medium">Nom</th>
+                  <th className="py-2 pr-4 font-medium">Guilde</th>
+                  <th className="py-2 pr-4 font-medium">Croyance</th>
+                  <th className="py-2 pr-4 font-medium">PNJ</th>
+                  <th className="py-2 pr-4 font-medium">Joueur</th>
+                  <th className="py-2 pr-4 font-medium">Email</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {pageItems.map((c) => (
+                  <tr key={c.external_id} className={rowClassName}>
+                    <td className="py-2 pr-4 text-foreground">{c.name}</td>
+                    <td className="py-2 pr-4 text-foreground/80">
+                      {c.guilds?.name ? (
+                        <button
+                          type="button"
+                          onClick={() => onGuildClick(c.guilds!.name)}
+                          className={linkClassName}
+                        >
+                          {c.guilds.name}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-4 text-foreground/80">
+                      {c.religion_name ?? "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-foreground/80">
+                      {c.is_npc ? "Oui" : "Non"}
+                    </td>
+                    <td className="py-2 pr-4 text-foreground/80">
+                      {c.player_name ?? "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-foreground/80">
+                      {c.player_email ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onPageChange={setPage}
+          />
+        </>
       )}
 
       {!isSearching && hasSearched && results.length === 0 && (
@@ -312,9 +377,13 @@ function CroyancesTab() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const visible = religions.filter((r) =>
-    r.name.toLowerCase().includes(query.toLowerCase()),
+  const religionsQuery = query.toLowerCase();
+  const visible = religions.filter(
+    (r) =>
+      r.name.toLowerCase().includes(religionsQuery) ||
+      String(r.memberCount).includes(religionsQuery),
   );
+  const { page, pageCount, setPage, pageItems } = usePagination(visible);
 
   if (isLoading)
     return <p className="text-sm text-foreground/60">Chargement…</p>;
@@ -340,7 +409,7 @@ function CroyancesTab() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => (
+            {pageItems.map((r) => (
               <tr key={r.name} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground">{r.name}</td>
                 <td className="py-2 pr-4 text-foreground/80">
@@ -351,6 +420,7 @@ function CroyancesTab() {
           </tbody>
         </table>
       </div>
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
     </div>
   );
 }
@@ -457,6 +527,8 @@ function SabliersTab({
         ? priestRows
         : [...pairRows, ...priestRows];
 
+  const { page, pageCount, setPage, pageItems } = usePagination(rows);
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -494,7 +566,7 @@ function SabliersTab({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {pageItems.map((r) => (
               <tr key={r.key} className={rowClassName}>
                 <td className="py-2 pr-4 text-foreground/80">
                   {r.religionName}
@@ -531,6 +603,7 @@ function SabliersTab({
           </tbody>
         </table>
       </div>
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
     </div>
   );
 }
@@ -562,9 +635,6 @@ function JeuContent() {
   return (
     <div>
       <h1 className={`${glofters.className} text-3xl text-foreground`}>Jeu</h1>
-      <p className="mt-2 text-foreground/70">
-        Guildes, sceaux et personnages synchronisés depuis bicolline.online.
-      </p>
 
       {tab === "sabliers" && sablierSummary && (
         <div className="mt-6">

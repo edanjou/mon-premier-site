@@ -219,3 +219,17 @@ export async function deleteActivityChapter(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw error;
 }
+
+export async function updateChapterPositions(
+  updates: { id: string; position: number }[],
+): Promise<void> {
+  await Promise.all(
+    updates.map(async ({ id, position }) => {
+      const { error } = await supabase
+        .from("activity_chapters")
+        .update({ position })
+        .eq("id", id);
+      if (error) throw error;
+    }),
+  );
+}

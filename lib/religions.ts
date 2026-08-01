@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { decodeHtmlEntities } from "@/lib/text";
 
 const PAGE_SIZE = 1000;
 
@@ -20,7 +21,8 @@ export async function listReligions(): Promise<Religion[]> {
     if (!data || data.length === 0) break;
 
     for (const row of data) {
-      counts.set(row.religion_name, (counts.get(row.religion_name) ?? 0) + 1);
+      const name = decodeHtmlEntities(row.religion_name);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
     }
 
     if (data.length < PAGE_SIZE) break;
@@ -66,17 +68,21 @@ export async function getSablierSummary(): Promise<SablierSummary> {
     .filter((r) => r.is_grand_priest)
     .map((r) => ({
       external_id: r.external_id,
-      religion_name: r.religion_name,
-      grand_priest_name: r.character_name,
-      cleric_name: r.cleric_name,
+      religion_name: decodeHtmlEntities(r.religion_name),
+      grand_priest_name: r.character_name
+        ? decodeHtmlEntities(r.character_name)
+        : null,
+      cleric_name: r.cleric_name ? decodeHtmlEntities(r.cleric_name) : null,
     }));
 
   const individualPriests = (data ?? [])
     .filter((r) => r.is_priest)
     .map((r) => ({
       external_id: r.external_id,
-      religion_name: r.religion_name,
-      priest_name: r.character_name,
+      religion_name: decodeHtmlEntities(r.religion_name),
+      priest_name: r.character_name
+        ? decodeHtmlEntities(r.character_name)
+        : null,
     }));
 
   return {

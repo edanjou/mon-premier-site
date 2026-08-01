@@ -107,9 +107,6 @@ export default function MonComptePage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Mon compte
       </h1>
-      <p className="mt-2 text-foreground/70">
-        Connecté en tant que {user?.email ?? "…"}
-      </p>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <form

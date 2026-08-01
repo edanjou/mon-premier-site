@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { FeatureKey } from "@/lib/features";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 
@@ -10,7 +9,7 @@ export default function RequireFeature({
   feature,
   children,
 }: {
-  feature: FeatureKey | readonly FeatureKey[];
+  feature: string | readonly string[];
   children: React.ReactNode;
 }) {
   const router = useRouter();

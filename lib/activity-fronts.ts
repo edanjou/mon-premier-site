@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { decodeHtmlEntities } from "@/lib/text";
 
 export const FRONT_COLORS = [
   "Jaune",
@@ -75,11 +76,12 @@ export async function getActivityFrontAssignments(
       .map((fg: { guilds: FrontGuild | FrontGuild[] | null }) =>
         Array.isArray(fg.guilds) ? (fg.guilds[0] ?? null) : fg.guilds,
       )
-      .filter((g: FrontGuild | null): g is FrontGuild => Boolean(g));
+      .filter((g: FrontGuild | null): g is FrontGuild => Boolean(g))
+      .map((g: FrontGuild) => ({ ...g, name: decodeHtmlEntities(g.name) }));
     const organizers = (front.activity_front_organizers ?? []).map(
       (o: FrontOrganizer) => ({
         character_id: o.character_id,
-        name: o.name,
+        name: decodeHtmlEntities(o.name),
         email: o.email,
       }),
     );

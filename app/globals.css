@@ -13,6 +13,20 @@
   --color-muted: #eaeaea;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --animate-wiggle: wiggle 0.5s ease-in-out;
+}
+
+@keyframes wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-12deg) scale(1.15);
+  }
+  75% {
+    transform: rotate(12deg) scale(1.15);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -20,6 +34,64 @@
     --background: #1c1c1c;
     --foreground: #f2f4f3;
   }
+}
+
+:where(button:not(:disabled):not(.rounded-t-lg):not(thead button), aside a) {
+  position: relative;
+  isolation: isolate;
+}
+
+button:not(:disabled):not(.rounded-t-lg):not(thead button)::before,
+aside a::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: #facc15;
+  clip-path: circle(0% at 50% 100%);
+  transition: clip-path 0.45s ease-out;
+  pointer-events: none;
+}
+
+button:not(:disabled):not(.rounded-t-lg):not(thead button):hover::before,
+aside a:hover::before {
+  clip-path: circle(150% at 50% 100%);
+}
+
+button:not(:disabled):not(.rounded-t-lg):not(thead button):hover,
+aside a:hover {
+  color: #1c1c1c;
+}
+
+button:not(:disabled):hover svg.lucide,
+aside a:hover svg.lucide {
+  animation: wiggle 0.5s ease-in-out;
+}
+
+.icon-badge-hover {
+  position: relative;
+  isolation: isolate;
+}
+
+.icon-badge-hover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: #facc15;
+  clip-path: circle(0% at 50% 100%);
+  transition: clip-path 0.45s ease-out;
+  pointer-events: none;
+}
+
+.group:hover .icon-badge-hover::before {
+  clip-path: circle(150% at 50% 100%);
+}
+
+.group:hover .icon-badge-hover {
+  color: #1c1c1c;
 }
 
 body {

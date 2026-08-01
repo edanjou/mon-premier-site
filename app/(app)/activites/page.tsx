@@ -1,6 +1,25 @@
 "use client";
 
 import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  AlertTriangle,
+  BookOpen,
   BookText,
   ChevronDown,
   ChevronUp,
@@ -8,32 +27,31 @@ import {
   Clock,
   Download,
   Feather,
-  FileDown,
   FileStack,
+  FileText,
   FlagTriangleRight,
+  GripVertical,
   Import,
   Map as MapIcon,
-  Mountain,
   Phone,
   Plus,
   RefreshCw,
-  Save,
   Search,
   Swords,
   Ticket,
   Trash2,
   Upload,
   Variable,
+  Wand2,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
 import RichTextEditor from "@/components/rich-text-editor";
 import {
-  ACTIVITY_CATEGORIES,
-  ACTIVITY_CATEGORY_STYLES,
   getActivityDetailTemplate,
   saveActivityDetailTemplate,
   updateActivityDetails,
@@ -47,9 +65,17 @@ import {
 import {
   buildFrontsExportInfo,
   downloadBlob,
-  exportActivityToDocx,
-  mergeActivitySchedule,
+  exportActivityDocumentToDocx,
 } from "@/lib/activity-docx-export";
+import {
+  buildDefaultBlocks,
+  DOCUMENT_BLOCK_LABELS,
+  listDocumentBlocks,
+  saveDocumentBlocks,
+  STANDARD_BLOCK_ORDER,
+  type DocumentBlock,
+  type StandardDocumentBlockType,
+} from "@/lib/activity-document";
 import {
   applyTemplateVariables,
   buildTemplateVariables,
@@ -62,6 +88,7 @@ import {
   listActivityChapters,
   listAllActivityChapters,
   updateActivityChapter,
+  updateChapterPositions,
   type ActivityChapter,
   type ActivityChapterInput,
   type ActivityChapterWithActivity,
@@ -77,18 +104,15 @@ import {
   type FrontColor,
 } from "@/lib/activity-fronts";
 import {
+  buildScheduleRows,
   listScheduleBlocks,
   saveScheduleBlocks,
   type ScheduleBlockInput,
+  type ScheduleRow,
 } from "@/lib/activity-schedule";
-import {
-  createBattlefield,
-  deleteBattlefield,
-  listBattlefields,
-  renameBattlefield,
-  type Battlefield,
-} from "@/lib/battlefields";
+import { listBattlefields, type Battlefield } from "@/lib/battlefields";
 import { searchCharacters, type Character } from "@/lib/characters";
+import { getModuleAccessLevels } from "@/lib/features";
 import { listGuilds, type Guild } from "@/lib/guilds";
 import { uploadMedia } from "@/lib/media-library";
 import { getOwnProfile } from "@/lib/profile";
@@ -121,9 +145,6 @@ function ActivityModal({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [date, setDate] = useState(initial?.date ?? "");
-  const [category, setCategory] = useState<string>(
-    initial?.category ?? ACTIVITY_CATEGORIES[0],
-  );
   const [numberOfFronts, setNumberOfFronts] = useState(
     String(initial?.number_of_fronts ?? 1),
   );
@@ -179,7 +200,6 @@ function ActivityModal({
     const payload: ActivityInput = {
       name,
       date,
-      category: category as ActivityInput["category"],
       number_of_fronts: parseInt(numberOfFronts, 10),
       participants_per_front: parseInt(participantsPerFront, 10),
       non_participants_enabled: nonParticipantsEnabled,
@@ -218,7 +238,7 @@ function ActivityModal({
         className="flex max-h-[85vh] w-full max-w-sm flex-col gap-3 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
       >
         <h2 className="font-semibold text-foreground">
-          {initial ? "Modifier l'activité" : "Créer une activité"}
+          {initial ? "Modifier la campagne" : "Créer une campagne"}
         </h2>
         <input
           type="text"
@@ -235,17 +255,6 @@ function ActivityModal({
           onChange={(e) => setDate(e.target.value)}
           className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
         />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-        >
-          {ACTIVITY_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
         <label className="flex items-center justify-between gap-2 text-sm text-foreground/70">
           Nombre de fronts
           <input
@@ -701,7 +710,7 @@ function ActivityFrontsModal({
         <p className="-mt-2 text-sm text-foreground/60">
           {activity.number_of_fronts} front
           {activity.number_of_fronts > 1 ? "s" : ""} prévu
-          {activity.number_of_fronts > 1 ? "s" : ""} pour cette activité.
+          {activity.number_of_fronts > 1 ? "s" : ""} pour cette campagne.
         </p>
 
         {isLoading || !assignments ? (
@@ -742,168 +751,6 @@ function ActivityFrontsModal({
             className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? "…" : "Enregistrer"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BattlefieldsModal({ onClose }: { onClose: () => void }) {
-  const [battlefields, setBattlefields] = useState<Battlefield[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchBattlefields = async () => {
-    setBattlefields(await listBattlefields());
-  };
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchBattlefields resolves before the loading flag is cleared
-    fetchBattlefields().finally(() => setIsLoading(false));
-  }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setError(null);
-    try {
-      await createBattlefield(newName.trim());
-      setNewName("");
-      await fetchBattlefields();
-    } catch {
-      setError("Échec de la création.");
-    }
-  };
-
-  const handleRename = async (id: string) => {
-    if (!editingName.trim()) return;
-    setError(null);
-    try {
-      await renameBattlefield(id, editingName.trim());
-      setEditingId(null);
-      await fetchBattlefields();
-    } catch {
-      setError("Échec de la modification.");
-    }
-  };
-
-  const handleDelete = async (battlefield: Battlefield) => {
-    if (
-      !window.confirm(`Supprimer le champ de bataille "${battlefield.name}" ?`)
-    )
-      return;
-    try {
-      await deleteBattlefield(battlefield.id);
-      setBattlefields((prev) => prev.filter((b) => b.id !== battlefield.id));
-    } catch {
-      setError("Échec de la suppression.");
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-sm flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
-      >
-        <h2 className="font-semibold text-foreground">Champs de bataille</h2>
-
-        {isLoading ? (
-          <p className="text-sm text-foreground/60">Chargement…</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {battlefields.length === 0 && (
-              <p className="text-sm text-foreground/60">
-                Aucun champ de bataille pour l&apos;instant.
-              </p>
-            )}
-            {battlefields.map((b) => (
-              <div
-                key={b.id}
-                className="flex items-center gap-2 rounded-lg border border-black/[.08] p-2 dark:border-white/[.145]"
-              >
-                {editingId === b.id ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      className="flex-1 rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRename(b.id)}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Enregistrer
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm text-foreground">
-                      {b.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingId(b.id);
-                        setEditingName(b.name);
-                      }}
-                      aria-label="Modifier"
-                      className="rounded-full p-1.5 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                    >
-                      <Feather size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(b)}
-                      aria-label="Supprimer"
-                      className="rounded-full p-1.5 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleCreate} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Nouveau champ de bataille…"
-            className="flex-1 rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-          />
-          <button
-            type="submit"
-            className="rounded-full bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
-          >
-            <Plus size={16} />
-          </button>
-        </form>
-
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
-
-        <div className="mt-1 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
-            Fermer
           </button>
         </div>
       </div>
@@ -1116,8 +963,8 @@ function ChapterForm({
         </label>
         {battlefields.length === 0 ? (
           <p className="text-xs text-foreground/40">
-            Aucun champ de bataille défini — gère-les depuis le bouton
-            &quot;Champs de bataille&quot; de la page Activités.
+            Aucun champ de bataille défini — gère-les depuis la section
+            &quot;Champs de bataille&quot; de la page Paramètres.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -1587,7 +1434,7 @@ function ActivityChaptersModal({
                         type="button"
                         onClick={() => handleDelete(chapter)}
                         aria-label="Supprimer"
-                        className="rounded-full p-2 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                        className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -1631,7 +1478,7 @@ function ActivityChaptersModal({
                 type="text"
                 value={libraryQuery}
                 onChange={(e) => setLibraryQuery(e.target.value)}
-                placeholder="Rechercher par titre ou activité…"
+                placeholder="Rechercher par titre ou campagne…"
                 className="w-full rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
               />
             </div>
@@ -1689,7 +1536,7 @@ function ActivityChaptersModal({
 }
 
 type DetailsTab = "inscription" | "horaire" | "elements" | "contact";
-type ActivityTab = "variables" | DetailsTab;
+type ActivityTab = "variables" | "texte-jeu" | DetailsTab;
 
 const DETAILS_TABS: { key: DetailsTab; label: string; icon: typeof Ticket }[] =
   [
@@ -1705,6 +1552,7 @@ const ACTIVITY_DETAILS_TABS: {
   icon: typeof Ticket;
 }[] = [
   { key: "variables", label: "Variables", icon: Variable },
+  { key: "texte-jeu", label: "Texte jeu", icon: BookOpen },
   ...DETAILS_TABS,
 ];
 
@@ -1712,16 +1560,159 @@ type ScheduleFormRow = {
   key: string;
   label: string;
   startTime: string;
-  duration: string;
+  endTime: string;
+  position: number;
 };
 
-type ScheduleDisplayRow = {
-  key: string;
-  label: string;
-  startTime: string;
-  duration: string;
-  isChapter: boolean;
-};
+const DEFAULT_SCHEDULE_ROWS: Omit<ScheduleFormRow, "key" | "position">[] = [
+  {
+    label: "Arrivée, inscription et homologation",
+    startTime: "08:00",
+    endTime: "09:30",
+  },
+  { label: "Déploiement", startTime: "09:30", endTime: "10:00" },
+  {
+    label: "Fin de la campagne et début de la Ducasse",
+    startTime: "17:00",
+    endTime: "17:00",
+  },
+];
+
+function SortableBlockRow({
+  row,
+  hasConflict,
+  onUpdate,
+  onRemove,
+}: {
+  row: ScheduleFormRow;
+  hasConflict: boolean;
+  onUpdate: (
+    key: string,
+    field: "label" | "startTime" | "endTime",
+    value: string,
+  ) => void;
+  onRemove: (key: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.key });
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`border-t border-black/[.06] dark:border-white/[.08] ${
+        hasConflict ? "bg-red-50 dark:bg-red-950/40" : ""
+      } ${isDragging ? "relative z-10 opacity-50" : ""}`}
+    >
+      <td className="px-3 py-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Déplacer"
+          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+        >
+          <GripVertical size={14} />
+        </button>
+      </td>
+      <td className="px-3 py-2">
+        <input
+          type="time"
+          value={row.startTime}
+          onChange={(e) => onUpdate(row.key, "startTime", e.target.value)}
+          className={chapterFieldClassName}
+        />
+      </td>
+      <td className="px-3 py-2">
+        <input
+          type="time"
+          value={row.endTime}
+          onChange={(e) => onUpdate(row.key, "endTime", e.target.value)}
+          className={chapterFieldClassName}
+        />
+      </td>
+      <td className="px-3 py-2">
+        <input
+          type="text"
+          value={row.label}
+          onChange={(e) => onUpdate(row.key, "label", e.target.value)}
+          placeholder="Nom du bloc (ex. Accueil)"
+          className={`w-full ${chapterFieldClassName}`}
+        />
+        {hasConflict && (
+          <AlertTriangle
+            size={14}
+            className="ml-2 inline text-red-600 dark:text-red-400"
+          />
+        )}
+      </td>
+      <td className="px-3 py-2 text-right">
+        <button
+          type="button"
+          onClick={() => onRemove(row.key)}
+          aria-label="Retirer"
+          className="text-foreground/50 hover:text-foreground"
+        >
+          <X size={14} />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function SortableChapterRow({ row }: { row: ScheduleRow }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.key });
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`border-t border-black/[.06] dark:border-white/[.08] ${
+        row.hasConflict ? "bg-red-50 dark:bg-red-950/40" : ""
+      } ${isDragging ? "relative z-10 opacity-50" : ""}`}
+    >
+      <td className="px-3 py-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Déplacer"
+          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+        >
+          <GripVertical size={14} />
+        </button>
+      </td>
+      <td className="px-3 py-2 text-foreground/80">{row.startTime || "—"}</td>
+      <td className="px-3 py-2 text-foreground/80">{row.endTime || "—"}</td>
+      <td className="px-3 py-2 text-foreground/80">
+        {row.label}
+        <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+          Chapitre
+        </span>
+        {row.hasConflict && (
+          <AlertTriangle
+            size={14}
+            className="ml-2 inline text-red-600 dark:text-red-400"
+          />
+        )}
+      </td>
+      <td className="px-3 py-2" />
+    </tr>
+  );
+}
 
 function ActivityDetailsModal({
   activity,
@@ -1734,6 +1725,12 @@ function ActivityDetailsModal({
 
   const [gameText, setGameText] = useState(activity.game_text ?? "");
 
+  const [mealLunchPrice, setMealLunchPrice] = useState(
+    activity.meal_lunch_price ?? "",
+  );
+  const [mealDinnerPrice, setMealDinnerPrice] = useState(
+    activity.meal_dinner_price ?? "",
+  );
   const [bonusParticipants, setBonusParticipants] = useState(
     activity.bonus_participants ?? "",
   );
@@ -1777,8 +1774,6 @@ function ActivityDetailsModal({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
-  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
-  const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1786,32 +1781,80 @@ function ActivityDetailsModal({
       getActivityFrontAssignments(activity.id),
       listActivityChapters(activity.id),
       listScheduleBlocks(activity.id),
+      getActivityDetailTemplate(),
     ])
-      .then(([frontAssignments, chapterList, blocks]) => {
+      .then(([frontAssignments, chapterList, blocks, template]) => {
         setFronts(frontAssignments);
         setChapters(chapterList);
+        // Horaire vide au chargement -> on part des blocs par défaut.
         setScheduleRows(
-          blocks.map((b) => ({
-            key: b.id,
-            label: b.label,
-            startTime: b.start_time ?? "",
-            duration: b.duration ?? "",
-          })),
+          blocks.length > 0
+            ? blocks.map((b) => ({
+                key: b.id,
+                label: b.label,
+                startTime: b.start_time ?? "",
+                endTime: b.end_time ?? "",
+                position: b.position,
+              }))
+            : DEFAULT_SCHEDULE_ROWS.map((r, index) => ({
+                ...r,
+                key: crypto.randomUUID(),
+                position: chapterList.length + index,
+              })),
         );
+        // Texte vide au chargement -> on part du modèle par défaut.
+        if (!registrationParticipantsPricing)
+          setRegistrationParticipantsPricing(
+            template.registration_participants_pricing ?? "",
+          );
+        if (!registrationParticipantsHowto)
+          setRegistrationParticipantsHowto(
+            template.registration_participants_howto ?? "",
+          );
+        if (!registrationNonParticipantsPricing)
+          setRegistrationNonParticipantsPricing(
+            template.registration_non_participants_pricing ?? "",
+          );
+        if (!registrationNonParticipantsHowto)
+          setRegistrationNonParticipantsHowto(
+            template.registration_non_participants_howto ?? "",
+          );
+        if (!scheduleIntro) setScheduleIntro(template.schedule_intro ?? "");
+        if (!scheduleOutro) setScheduleOutro(template.schedule_outro ?? "");
+        if (!gameSecurity) setGameSecurity(template.game_security ?? "");
+        if (!gameStaff) setGameStaff(template.game_staff ?? "");
+        if (!gameRewards) setGameRewards(template.game_rewards ?? "");
+        if (!gameRules) setGameRules(template.game_rules ?? "");
+        if (!gameDeathHealing)
+          setGameDeathHealing(template.game_death_healing ?? "");
+        if (!gameVaria) setGameVaria(template.game_varia ?? "");
+        if (!contactInfo) setContactInfo(template.contact_info ?? "");
       })
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only checks the fields' initial (pre-edit) values to decide whether to auto-fill from the template; must run once per activity, not on every keystroke
   }, [activity.id]);
 
   const addScheduleRow = () => {
+    const maxPosition = Math.max(
+      -1,
+      ...chapters.map((c) => c.position),
+      ...scheduleRows.map((r) => r.position),
+    );
     setScheduleRows((prev) => [
       ...prev,
-      { key: crypto.randomUUID(), label: "", startTime: "", duration: "" },
+      {
+        key: crypto.randomUUID(),
+        label: "",
+        startTime: "",
+        endTime: "",
+        position: maxPosition + 1,
+      },
     ]);
   };
 
   const updateScheduleRow = (
     key: string,
-    field: "label" | "startTime" | "duration",
+    field: "label" | "startTime" | "endTime",
     value: string,
   ) => {
     setScheduleRows((prev) =>
@@ -1823,16 +1866,36 @@ function ActivityDetailsModal({
     setScheduleRows((prev) => prev.filter((r) => r.key !== key));
   };
 
-  const combinedSchedule: ScheduleDisplayRow[] = [
-    ...chapters.map((c) => ({
-      key: c.id,
-      label: c.title,
-      startTime: c.start_time ?? "",
-      duration: c.duration ?? "",
-      isChapter: true,
-    })),
-    ...scheduleRows.map((r) => ({ ...r, isChapter: false })),
-  ].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const scheduleSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const combinedSchedule = buildScheduleRows(chapters, scheduleRows);
+
+  const handleScheduleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIndex = combinedSchedule.findIndex((r) => r.key === active.id);
+    const toIndex = combinedSchedule.findIndex((r) => r.key === over.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const reordered = arrayMove(combinedSchedule, fromIndex, toIndex);
+    const positionByKey = new Map(reordered.map((r, index) => [r.key, index]));
+    setChapters((prev) =>
+      prev.map((c) => ({
+        ...c,
+        position: positionByKey.get(c.id) ?? c.position,
+      })),
+    );
+    setScheduleRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        position: positionByKey.get(r.key) ?? r.position,
+      })),
+    );
+  };
 
   const activeFrontColors = fronts
     ? FRONT_COLORS.filter(
@@ -1893,20 +1956,7 @@ function ActivityDetailsModal({
     setIsApplyingTemplate(true);
     try {
       const template = await getActivityDetailTemplate();
-      const vars = buildTemplateVariables({
-        date: activity.date,
-        participants_per_front: activity.participants_per_front,
-        non_participants_max: activity.non_participants_max,
-        bonus_participants: bonusParticipants || null,
-        bonus2_participants: bonus2Participants || null,
-      });
-      const substituted = Object.fromEntries(
-        Object.entries(template).map(([key, val]) => [
-          key,
-          typeof val === "string" ? applyTemplateVariables(val, vars) : val,
-        ]),
-      ) as ActivityDetails;
-      applyDetails(substituted);
+      applyDetails(template);
     } catch {
       setError("Échec du chargement du modèle.");
     } finally {
@@ -1914,22 +1964,31 @@ function ActivityDetailsModal({
     }
   };
 
-  const handleSaveAsTemplate = async () => {
-    if (
-      !window.confirm(
-        "Enregistrer ce contenu comme nouveau modèle par défaut pour les prochaines activités ?",
-      )
-    )
-      return;
-    setError(null);
-    setIsSavingTemplate(true);
-    try {
-      await saveActivityDetailTemplate(buildDetailsPayload());
-    } catch {
-      setError("Échec de l'enregistrement du modèle.");
-    } finally {
-      setIsSavingTemplate(false);
-    }
+  const handleApplyVariables = () => {
+    const vars = buildTemplateVariables({
+      date: activity.date,
+      participants_per_front: activity.participants_per_front,
+      non_participants_max: activity.non_participants_max,
+      meal_lunch_price: mealLunchPrice || null,
+      meal_dinner_price: mealDinnerPrice || null,
+      bonus_participants: bonusParticipants || null,
+      bonus2_participants: bonus2Participants || null,
+    });
+    setRegistrationParticipantsPricing((v) => applyTemplateVariables(v, vars));
+    setRegistrationParticipantsHowto((v) => applyTemplateVariables(v, vars));
+    setRegistrationNonParticipantsPricing((v) =>
+      applyTemplateVariables(v, vars),
+    );
+    setRegistrationNonParticipantsHowto((v) => applyTemplateVariables(v, vars));
+    setScheduleIntro((v) => applyTemplateVariables(v, vars));
+    setScheduleOutro((v) => applyTemplateVariables(v, vars));
+    setGameSecurity((v) => applyTemplateVariables(v, vars));
+    setGameStaff((v) => applyTemplateVariables(v, vars));
+    setGameRewards((v) => applyTemplateVariables(v, vars));
+    setGameRules((v) => applyTemplateVariables(v, vars));
+    setGameDeathHealing((v) => applyTemplateVariables(v, vars));
+    setGameVaria((v) => applyTemplateVariables(v, vars));
+    setContactInfo((v) => applyTemplateVariables(v, vars));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1943,57 +2002,28 @@ function ActivityDetailsModal({
       await updateActivityDetails(activity.id, buildDetailsPayload());
 
       const variables: ActivityVariables = {
+        meal_lunch_price: mealLunchPrice || null,
+        meal_dinner_price: mealDinnerPrice || null,
         bonus_participants: bonusParticipants || null,
         bonus2_participants: bonus2Participants || null,
       };
       await updateActivityVariables(activity.id, variables);
 
-      const blockInputs: ScheduleBlockInput[] = scheduleRows.map(
-        (r, index) => ({
-          label: r.label,
-          start_time: r.startTime || null,
-          duration: r.duration || null,
-          position: index,
-        }),
-      );
+      const blockInputs: ScheduleBlockInput[] = scheduleRows.map((r) => ({
+        label: r.label,
+        start_time: r.startTime || null,
+        end_time: r.endTime || null,
+        position: r.position,
+      }));
       await saveScheduleBlocks(activity.id, blockInputs);
+      await updateChapterPositions(
+        chapters.map((c) => ({ id: c.id, position: c.position })),
+      );
       onClose();
     } catch {
       setError("Échec de l'enregistrement.");
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleExportDocx = async () => {
-    setError(null);
-    setIsExportingDocx(true);
-    try {
-      const blob = await exportActivityToDocx({
-        name: activity.name,
-        date: formatActivityDate(activity.date),
-        gameText,
-        registrationParticipantsPricing,
-        registrationParticipantsHowto,
-        fronts: fronts ? buildFrontsExportInfo(fronts) : [],
-        registrationNonParticipantsPricing,
-        registrationNonParticipantsHowto,
-        scheduleIntro,
-        schedule: combinedSchedule,
-        scheduleOutro,
-        gameSecurity,
-        gameStaff,
-        gameRewards,
-        gameRules,
-        gameDeathHealing,
-        gameVaria,
-        contactInfo,
-      });
-      downloadBlob(blob, `${activity.name}.docx`);
-    } catch {
-      setError("Échec de l'exportation Word.");
-    } finally {
-      setIsExportingDocx(false);
     }
   };
 
@@ -2011,37 +2041,14 @@ function ActivityDetailsModal({
           <h2 className="font-semibold text-foreground">
             Détails — {activity.name}
           </h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExportDocx}
-              disabled={isExportingDocx}
-              className="flex items-center gap-2 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            >
-              <FileDown size={14} />
-              {isExportingDocx ? "…" : "Exporter en Word"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Fermer"
-              className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-foreground">
-            Texte jeu
-          </label>
-          <RichTextEditor
-            value={gameText}
-            onChange={setGameText}
-            placeholder="Texte jeu de la campagne"
-            minHeight="4rem"
-          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <div className="flex gap-2 border-b border-black/[.08] dark:border-white/[.08]">
@@ -2067,7 +2074,7 @@ function ActivityDetailsModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-foreground/50">
-            Modèle : contenu réutilisable d&apos;une activité à l&apos;autre
+            Modèle : contenu réutilisable d&apos;une campagne à l&apos;autre
             (inscriptions, éléments jeux, nous joindre).
           </span>
           <div className="flex items-center gap-2">
@@ -2082,12 +2089,11 @@ function ActivityDetailsModal({
             </button>
             <button
               type="button"
-              onClick={handleSaveAsTemplate}
-              disabled={isSavingTemplate}
-              className="flex items-center gap-1 rounded-full border border-black/[.08] px-3 py-1.5 font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+              onClick={handleApplyVariables}
+              className="flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 font-medium text-white transition-colors hover:bg-[#0c4390]"
             >
-              <Save size={14} />
-              {isSavingTemplate ? "…" : "Enregistrer comme modèle"}
+              <Wand2 size={14} />
+              Intégrer les variables
             </button>
           </div>
         </div>
@@ -2100,10 +2106,33 @@ function ActivityDetailsModal({
               {tab === "variables" && (
                 <div className="flex flex-col gap-4">
                   <p className="text-xs text-foreground/50">
-                    Ces valeurs remplacent automatiquement les jetons (ex.
-                    [BONUSPARTICIPANTS]) présents dans le texte du modèle
-                    lorsque tu cliques sur &quot;Charger le modèle&quot;.
+                    Remplis ces valeurs, puis clique sur &quot;Intégrer les
+                    variables dans les textes&quot; pour remplacer les jetons
+                    (ex. [BONUSPARTICIPANTS]) présents dans les textes par ces
+                    valeurs.
                   </p>
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-foreground">
+                      Repas dîner
+                    </label>
+                    <RichTextEditor
+                      value={mealLunchPrice}
+                      onChange={setMealLunchPrice}
+                      placeholder="Détailler les infos du dîner"
+                      minHeight="4rem"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-foreground">
+                      Repas souper
+                    </label>
+                    <RichTextEditor
+                      value={mealDinnerPrice}
+                      onChange={setMealDinnerPrice}
+                      placeholder="Détailler les infos du souper"
+                      minHeight="4rem"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="flex flex-col gap-1 text-sm text-foreground/70">
                       Bonus de participants
@@ -2124,6 +2153,20 @@ function ActivityDetailsModal({
                       />
                     </label>
                   </div>
+                </div>
+              )}
+
+              {tab === "texte-jeu" && (
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-foreground">
+                    Texte jeu
+                  </label>
+                  <RichTextEditor
+                    value={gameText}
+                    onChange={setGameText}
+                    placeholder="Texte jeu de la campagne"
+                    minHeight="8rem"
+                  />
                 </div>
               )}
 
@@ -2187,7 +2230,7 @@ function ActivityDetailsModal({
                     ) : (
                       <p className="text-xs text-foreground/40">
                         Aucun front configuré — gère-les depuis le bouton
-                        &quot;Fronts&quot; de cette activité.
+                        &quot;Fronts&quot; de cette campagne.
                       </p>
                     )}
                   </div>
@@ -2232,117 +2275,72 @@ function ActivityDetailsModal({
                     />
                   </div>
 
+                  {combinedSchedule.some((row) => row.hasConflict) && (
+                    <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
+                      <AlertTriangle size={16} />
+                      Conflit d&apos;horaire détecté entre certains éléments
+                      (surlignés ci-dessous).
+                    </p>
+                  )}
+
                   <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
-                    <table className="w-full text-sm">
-                      <thead className="bg-black/[.02] dark:bg-white/[.03]">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-medium text-foreground/70">
-                            Heure
-                          </th>
-                          <th className="px-3 py-2 text-left font-medium text-foreground/70">
-                            Élément
-                          </th>
-                          <th className="px-3 py-2 text-left font-medium text-foreground/70">
-                            Durée
-                          </th>
-                          <th className="px-3 py-2" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {combinedSchedule.length === 0 && (
+                    <DndContext
+                      sensors={scheduleSensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleScheduleDragEnd}
+                    >
+                      <table className="w-full text-sm">
+                        <thead className="bg-black/[.02] dark:bg-white/[.03]">
                           <tr>
-                            <td
-                              colSpan={4}
-                              className="px-3 py-3 text-center text-xs text-foreground/40"
-                            >
-                              Aucun élément à l&apos;horaire.
-                            </td>
+                            <th className="px-3 py-2" />
+                            <th className="px-3 py-2 text-left font-medium text-foreground/70">
+                              Début
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-foreground/70">
+                              Fin
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-foreground/70">
+                              Élément
+                            </th>
+                            <th className="px-3 py-2" />
                           </tr>
-                        )}
-                        {combinedSchedule.map((row) =>
-                          row.isChapter ? (
-                            <tr
-                              key={row.key}
-                              className="border-t border-black/[.06] dark:border-white/[.08]"
-                            >
-                              <td className="px-3 py-2 text-foreground/80">
-                                {row.startTime || "—"}
-                              </td>
-                              <td className="px-3 py-2 text-foreground/80">
-                                {row.label}
-                                <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                                  Chapitre
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-foreground/80">
-                                {row.duration || "—"}
-                              </td>
-                              <td className="px-3 py-2" />
-                            </tr>
-                          ) : (
-                            <tr
-                              key={row.key}
-                              className="border-t border-black/[.06] dark:border-white/[.08]"
-                            >
-                              <td className="px-3 py-2">
-                                <input
-                                  type="time"
-                                  value={row.startTime}
-                                  onChange={(e) =>
-                                    updateScheduleRow(
-                                      row.key,
-                                      "startTime",
-                                      e.target.value,
-                                    )
-                                  }
-                                  className={chapterFieldClassName}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={row.label}
-                                  onChange={(e) =>
-                                    updateScheduleRow(
-                                      row.key,
-                                      "label",
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="Nom du bloc (ex. Accueil)"
-                                  className={`w-full ${chapterFieldClassName}`}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={row.duration}
-                                  onChange={(e) =>
-                                    updateScheduleRow(
-                                      row.key,
-                                      "duration",
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="Durée (ex. 30 minutes)"
-                                  className={chapterFieldClassName}
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => removeScheduleRow(row.key)}
-                                  aria-label="Retirer"
-                                  className="text-foreground/50 hover:text-foreground"
-                                >
-                                  <X size={14} />
-                                </button>
+                        </thead>
+                        <tbody>
+                          {combinedSchedule.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="px-3 py-3 text-center text-xs text-foreground/40"
+                              >
+                                Aucun élément à l&apos;horaire.
                               </td>
                             </tr>
-                          ),
-                        )}
-                      </tbody>
-                    </table>
+                          )}
+                          <SortableContext
+                            items={combinedSchedule.map((r) => r.key)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {combinedSchedule.map((row) =>
+                              row.isChapter ? (
+                                <SortableChapterRow key={row.key} row={row} />
+                              ) : (
+                                <SortableBlockRow
+                                  key={row.key}
+                                  row={
+                                    scheduleRows.find(
+                                      (r) => r.key === row.key,
+                                    ) as ScheduleFormRow
+                                  }
+                                  hasConflict={row.hasConflict}
+                                  onUpdate={updateScheduleRow}
+                                  onRemove={removeScheduleRow}
+                                />
+                              ),
+                            )}
+                          </SortableContext>
+                        </tbody>
+                      </table>
+                    </DndContext>
                     <button
                       type="button"
                       onClick={addScheduleRow}
@@ -2473,6 +2471,389 @@ function ActivityDetailsModal({
   );
 }
 
+function SortableDocumentBlockRow({
+  block,
+  title,
+  onRemove,
+  onLabelChange,
+  onContentChange,
+}: {
+  block: DocumentBlock;
+  title: string;
+  onRemove: (id: string) => void;
+  onLabelChange: (id: string, label: string) => void;
+  onContentChange: (id: string, content: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: block.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`rounded-lg border border-black/[.08] p-3 dark:border-white/[.145] ${
+        isDragging ? "relative z-10 opacity-50" : ""
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Déplacer"
+          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+        >
+          <GripVertical size={14} />
+        </button>
+        {block.block_type === "custom_text" ? (
+          <input
+            type="text"
+            value={block.label ?? ""}
+            onChange={(e) => onLabelChange(block.id, e.target.value)}
+            placeholder="Titre du bloc (optionnel)"
+            className={`flex-1 ${chapterFieldClassName}`}
+          />
+        ) : (
+          <p className="flex-1 font-medium text-foreground">{title}</p>
+        )}
+        <button
+          type="button"
+          onClick={() => onRemove(block.id)}
+          aria-label="Retirer"
+          className="text-foreground/50 hover:text-foreground"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      {block.block_type === "custom_text" && (
+        <div className="mt-2">
+          <RichTextEditor
+            value={block.content ?? ""}
+            onChange={(html) => onContentChange(block.id, html)}
+            placeholder="Contenu du bloc…"
+            minHeight="6rem"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityDocumentModal({
+  activity,
+  onClose,
+}: {
+  activity: Activity;
+  onClose: () => void;
+}) {
+  const [chapters, setChapters] = useState<ActivityChapter[]>([]);
+  const [blocks, setBlocks] = useState<DocumentBlock[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      listActivityChapters(activity.id),
+      listDocumentBlocks(activity.id),
+    ])
+      .then(([chapterList, savedBlocks]) => {
+        setChapters(chapterList);
+        setBlocks(
+          savedBlocks.length > 0
+            ? savedBlocks
+            : buildDefaultBlocks(chapterList),
+        );
+      })
+      .finally(() => setIsLoading(false));
+  }, [activity.id]);
+
+  const chapterTitleById = new Map(chapters.map((c) => [c.id, c.title]));
+
+  const blockTitle = (block: DocumentBlock): string => {
+    if (block.block_type === "chapter") {
+      return (
+        (block.chapter_id && chapterTitleById.get(block.chapter_id)) ||
+        "Chapitre supprimé"
+      );
+    }
+    if (block.block_type === "custom_text") {
+      return block.label || "Bloc de texte";
+    }
+    return DOCUMENT_BLOCK_LABELS[block.block_type];
+  };
+
+  const missingStandardBlocks = STANDARD_BLOCK_ORDER.filter(
+    (type) => !blocks.some((b) => b.block_type === type),
+  );
+  const missingChapters = chapters.filter(
+    (c) =>
+      !blocks.some((b) => b.block_type === "chapter" && b.chapter_id === c.id),
+  );
+
+  const addStandardBlock = (type: StandardDocumentBlockType) => {
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        block_type: type,
+        chapter_id: null,
+        label: null,
+        content: null,
+        position: prev.length,
+      },
+    ]);
+  };
+
+  const addChapterBlock = (chapter: ActivityChapter) => {
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        block_type: "chapter",
+        chapter_id: chapter.id,
+        label: null,
+        content: null,
+        position: prev.length,
+      },
+    ]);
+  };
+
+  const addTextBlock = () => {
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        block_type: "custom_text",
+        chapter_id: null,
+        label: "",
+        content: "",
+        position: prev.length,
+      },
+    ]);
+  };
+
+  const removeBlock = (id: string) => {
+    setBlocks((prev) => prev.filter((b) => b.id !== id));
+  };
+
+  const updateBlockLabel = (id: string, label: string) => {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, label } : b)));
+  };
+
+  const updateBlockContent = (id: string, content: string) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, content } : b)),
+    );
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setBlocks((prev) => {
+      const fromIndex = prev.findIndex((b) => b.id === active.id);
+      const toIndex = prev.findIndex((b) => b.id === over.id);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      return arrayMove(prev, fromIndex, toIndex);
+    });
+  };
+
+  const handleSave = async () => {
+    setError(null);
+    setIsSaving(true);
+    try {
+      await saveDocumentBlocks(activity.id, blocks);
+    } catch {
+      setError("Échec de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setError(null);
+    setIsExporting(true);
+    try {
+      await saveDocumentBlocks(activity.id, blocks);
+      const [scheduleBlocks, frontAssignments] = await Promise.all([
+        listScheduleBlocks(activity.id),
+        getActivityFrontAssignments(activity.id),
+      ]);
+      const scheduleRows = buildScheduleRows(
+        chapters,
+        scheduleBlocks.map((b) => ({
+          key: b.id,
+          label: b.label,
+          startTime: b.start_time ?? "",
+          endTime: b.end_time ?? "",
+          position: b.position,
+        })),
+      );
+      const blob = await exportActivityDocumentToDocx({
+        activity,
+        formattedDate: formatActivityDate(activity.date),
+        chapters,
+        blocks,
+        scheduleRows,
+        scheduleIntro: activity.schedule_intro ?? "",
+        scheduleOutro: activity.schedule_outro ?? "",
+        fronts: buildFrontsExportInfo(frontAssignments),
+      });
+      downloadBlob(blob, `${activity.name}.docx`);
+    } catch {
+      setError("Échec de l'exportation Word.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">
+            Document — {activity.name}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {isLoading && (
+          <p className="text-sm text-foreground/60">Chargement…</p>
+        )}
+
+        {!isLoading && (
+          <>
+            <p className="rounded-lg border border-black/[.08] px-3 py-2 text-sm font-medium text-foreground/70 dark:border-white/[.145]">
+              {activity.name}{" "}
+              <span className="font-normal text-foreground/50">
+                (titre, toujours en premier)
+              </span>
+            </p>
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={blocks.map((b) => b.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="flex flex-col gap-2">
+                  {blocks.map((block) => (
+                    <SortableDocumentBlockRow
+                      key={block.id}
+                      block={block}
+                      title={blockTitle(block)}
+                      onRemove={removeBlock}
+                      onLabelChange={updateBlockLabel}
+                      onContentChange={updateBlockContent}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            {(missingStandardBlocks.length > 0 ||
+              missingChapters.length > 0) && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-black/[.08] pt-3 dark:border-white/[.08]">
+                <span className="text-xs text-foreground/60">Ajouter :</span>
+                {missingStandardBlocks.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addStandardBlock(type)}
+                    className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                  >
+                    + {DOCUMENT_BLOCK_LABELS[type]}
+                  </button>
+                ))}
+                {missingChapters.map((chapter) => (
+                  <button
+                    key={chapter.id}
+                    type="button"
+                    onClick={() => addChapterBlock(chapter)}
+                    className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                  >
+                    + {chapter.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={addTextBlock}
+              className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              <Plus size={14} />
+              Ajouter un bloc de texte
+            </button>
+          </>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-2 border-t border-black/[.08] pt-3 dark:border-white/[.08]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Fermer
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || isLoading}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            {isSaving ? "…" : "Enregistrer la structure"}
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting || isLoading}
+            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <FileText size={14} />
+            {isExporting ? "…" : "Exporter en Word"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DefaultTemplateModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<DetailsTab>("inscription");
 
@@ -2577,7 +2958,7 @@ function DefaultTemplateModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground">
-            Modèle par défaut des activités
+            Modèle par défaut des campagnes
           </h2>
           <button
             type="button"
@@ -2590,8 +2971,8 @@ function DefaultTemplateModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <p className="text-xs text-foreground/50">
-          Ce texte sert de base réutilisable d&apos;une activité à l&apos;autre.
-          Chaque activité peut ensuite le charger et l&apos;ajuster depuis son
+          Ce texte sert de base réutilisable d&apos;une campagne à l&apos;autre.
+          Chaque campagne peut ensuite le charger et l&apos;ajuster depuis son
           bouton &quot;Détails&quot;.
         </p>
 
@@ -2699,7 +3080,7 @@ function DefaultTemplateModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <p className="text-xs text-foreground/40">
                     Le tableau de l&apos;horaire lui-même (chapitres et blocs de
-                    temps) est propre à chaque activité et ne fait pas partie du
+                    temps) est propre à chaque campagne et ne fait pas partie du
                     modèle.
                   </p>
                 </div>
@@ -2822,33 +3203,20 @@ function ActivitesContent() {
     null,
   );
   const [detailsActivity, setDetailsActivity] = useState<Activity | null>(null);
-  const [isBattlefieldsOpen, setIsBattlefieldsOpen] = useState(false);
-  const [isDefaultTemplateOpen, setIsDefaultTemplateOpen] = useState(false);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [exportingActivityId, setExportingActivityId] = useState<string | null>(
+  const [documentActivity, setDocumentActivity] = useState<Activity | null>(
     null,
   );
+  const [isDefaultTemplateOpen, setIsDefaultTemplateOpen] = useState(false);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [searchQuery, setSearchQuery] = useState("");
   const [hasFullAccess, setHasFullAccess] = useState(true);
 
   useEffect(() => {
     getOwnProfile().then((profile) => {
       if (!profile) return;
-      if (profile.role === "admin") {
-        setHasFullAccess(true);
-        return;
-      }
-      supabase
-        .from("permissions")
-        .select("feature, granted")
-        .eq("user_id", profile.id)
-        .in("feature", ["activites", "activites-scenariste"])
-        .then(({ data }) => {
-          setHasFullAccess(
-            (data ?? []).some((r) => r.feature === "activites" && r.granted),
-          );
-        });
+      getModuleAccessLevels(profile).then((levels) => {
+        setHasFullAccess(levels["activites"] === "gestionnaire");
+      });
     });
   }, []);
 
@@ -2861,7 +3229,7 @@ function ActivitesContent() {
       .order("date", { ascending: true });
     setIsLoading(false);
     if (error) {
-      setError("Impossible de charger les activités.");
+      setError("Impossible de charger les campagnes.");
       return;
     }
     setActivities(data ?? []);
@@ -2873,7 +3241,7 @@ function ActivitesContent() {
   }, []);
 
   const handleDelete = async (activity: Activity) => {
-    if (!window.confirm(`Supprimer l'activité "${activity.name}" ?`)) return;
+    if (!window.confirm(`Supprimer la campagne "${activity.name}" ?`)) return;
     const { error } = await supabase
       .from("activities")
       .delete()
@@ -2885,74 +3253,38 @@ function ActivitesContent() {
     setActivities((prev) => prev.filter((a) => a.id !== activity.id));
   };
 
-  const handleExportActivityDocx = async (activity: Activity) => {
-    setExportingActivityId(activity.id);
-    try {
-      const [chapters, blocks, frontAssignments] = await Promise.all([
-        listActivityChapters(activity.id),
-        listScheduleBlocks(activity.id),
-        getActivityFrontAssignments(activity.id),
-      ]);
-      const blob = await exportActivityToDocx({
-        name: activity.name,
-        date: formatActivityDate(activity.date),
-        gameText: activity.game_text ?? "",
-        registrationParticipantsPricing:
-          activity.registration_participants_pricing ?? "",
-        registrationParticipantsHowto:
-          activity.registration_participants_howto ?? "",
-        fronts: buildFrontsExportInfo(frontAssignments),
-        registrationNonParticipantsPricing:
-          activity.registration_non_participants_pricing ?? "",
-        registrationNonParticipantsHowto:
-          activity.registration_non_participants_howto ?? "",
-        scheduleIntro: activity.schedule_intro ?? "",
-        schedule: mergeActivitySchedule(chapters, blocks),
-        scheduleOutro: activity.schedule_outro ?? "",
-        gameSecurity: activity.game_security ?? "",
-        gameStaff: activity.game_staff ?? "",
-        gameRewards: activity.game_rewards ?? "",
-        gameRules: activity.game_rules ?? "",
-        gameDeathHealing: activity.game_death_healing ?? "",
-        gameVaria: activity.game_varia ?? "",
-        contactInfo: activity.contact_info ?? "",
-      });
-      downloadBlob(blob, `${activity.name}.docx`);
-    } catch {
-      alert("Échec de l'exportation Word.");
-    } finally {
-      setExportingActivityId(null);
-    }
-  };
-
   const toggleSortDirection = () => {
     setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
   };
 
   const query = searchQuery.trim().toLowerCase();
   const visibleActivities = activities
-    .filter((a) => !categoryFilter || a.category === categoryFilter)
-    .filter((a) => !query || a.name.toLowerCase().includes(query))
+    .filter(
+      (a) =>
+        !query ||
+        a.name.toLowerCase().includes(query) ||
+        formatActivityDate(a.date).toLowerCase().includes(query) ||
+        String(a.number_of_fronts).includes(query) ||
+        String(a.participants_per_front).includes(query),
+    )
     .sort((a, b) => {
       const cmp = a.date.localeCompare(b.date);
       return sortDirection === "asc" ? cmp : -cmp;
     });
+  const {
+    page: activitiesPage,
+    pageCount: activitiesPageCount,
+    setPage: setActivitiesPage,
+    pageItems: pagedActivities,
+  } = usePagination(visibleActivities);
 
   return (
     <div>
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
-        Activités
+        Campagnes
       </h1>
-      <p className="mt-2 text-foreground/70">
-        Campagnes militaires, campagnes d&apos;aventure, scénarios spéciaux,
-        escarmouches et grandes batailles.
-      </p>
 
       <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
-        <h2 className="mb-4 font-semibold text-foreground">
-          Activités planifiées
-        </h2>
-
         {isLoading && <p className="text-sm text-foreground/60">Chargement…</p>}
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -2975,28 +3307,9 @@ function ActivitesContent() {
                     className="w-56 rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
                   />
                 </div>
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="rounded-full border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-                >
-                  <option value="">Toutes les catégories</option>
-                  {ACTIVITY_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
               </div>
               {hasFullAccess && (
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsBattlefieldsOpen(true)}
-                    className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-                  >
-                    <Mountain size={16} />
-                    Champs de bataille
-                  </button>
                   <button
                     onClick={() => setIsDefaultTemplateOpen(true)}
                     className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
@@ -3009,7 +3322,7 @@ function ActivitesContent() {
                     className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
                   >
                     <Plus size={16} />
-                    Créer une activité
+                    Créer une campagne
                   </button>
                 </div>
               )}
@@ -3017,13 +3330,13 @@ function ActivitesContent() {
 
             {activities.length === 0 && (
               <p className="text-sm text-foreground/60">
-                Aucune activité pour l&apos;instant.
+                Aucune campagne pour l&apos;instant.
               </p>
             )}
 
             {activities.length > 0 && visibleActivities.length === 0 && (
               <p className="text-sm text-foreground/60">
-                Aucune activité ne correspond à ces critères.
+                Aucune campagne ne correspond à ces critères.
               </p>
             )}
 
@@ -3047,7 +3360,6 @@ function ActivitesContent() {
                           )}
                         </button>
                       </th>
-                      <th className="py-2 pr-4 font-medium">Catégorie</th>
                       <th className="py-2 pr-4 font-medium">Fronts</th>
                       <th className="py-2 pr-4 font-medium">
                         Participants/front
@@ -3056,7 +3368,7 @@ function ActivitesContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleActivities.map((activity) => (
+                    {pagedActivities.map((activity) => (
                       <tr
                         key={activity.id}
                         className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
@@ -3067,13 +3379,6 @@ function ActivitesContent() {
                         <td className="py-2 pr-4 text-foreground/80">
                           {formatActivityDate(activity.date)}
                         </td>
-                        <td className="py-2 pr-4">
-                          <span
-                            className={`rounded-full px-2 py-1 text-xs font-medium ${ACTIVITY_CATEGORY_STYLES[activity.category]}`}
-                          >
-                            {activity.category}
-                          </span>
-                        </td>
                         <td className="py-2 pr-4 text-foreground/80">
                           {activity.number_of_fronts}
                         </td>
@@ -3081,60 +3386,68 @@ function ActivitesContent() {
                           {activity.participants_per_front}
                         </td>
                         <td className="py-2 pr-4">
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => setFrontsActivity(activity)}
-                              aria-label="Fronts"
-                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                            >
-                              <FlagTriangleRight size={16} />
-                            </button>
-                            <button
-                              onClick={() => setChaptersActivity(activity)}
-                              aria-label="Chapitres"
-                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                            >
-                              <BookText size={16} />
-                            </button>
-                            <button
-                              onClick={() => setDetailsActivity(activity)}
-                              aria-label="Détails"
-                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                            >
-                              <ClipboardList size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleExportActivityDocx(activity)}
-                              disabled={exportingActivityId === activity.id}
-                              aria-label="Exporter en Word"
-                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/[.08]"
-                            >
-                              <FileDown size={16} />
-                            </button>
-                            {hasFullAccess && (
-                              <>
-                                <button
-                                  onClick={() => setEditingActivity(activity)}
-                                  aria-label="Modifier"
-                                  className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                                >
-                                  <Feather size={16} />
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(activity)}
-                                  aria-label="Supprimer"
-                                  className="rounded-full p-2 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </>
-                            )}
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => setFrontsActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <FlagTriangleRight size={14} />
+                                Fronts
+                              </button>
+                              <button
+                                onClick={() => setChaptersActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <BookText size={14} />
+                                Chapitres
+                              </button>
+                              <button
+                                onClick={() => setDetailsActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <ClipboardList size={14} />
+                                Détails
+                              </button>
+                              <button
+                                onClick={() => setDocumentActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <FileText size={14} />
+                                Document
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {hasFullAccess && (
+                                <>
+                                  <button
+                                    onClick={() => setEditingActivity(activity)}
+                                    aria-label="Modifier"
+                                    className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                                  >
+                                    <Feather size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(activity)}
+                                    aria-label="Supprimer"
+                                    className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <Pagination
+                  page={activitiesPage}
+                  pageCount={activitiesPageCount}
+                  onPageChange={setActivitiesPage}
+                />
               </div>
             )}
           </>
@@ -3172,8 +3485,11 @@ function ActivitesContent() {
           onClose={() => setDetailsActivity(null)}
         />
       )}
-      {isBattlefieldsOpen && (
-        <BattlefieldsModal onClose={() => setIsBattlefieldsOpen(false)} />
+      {documentActivity && (
+        <ActivityDocumentModal
+          activity={documentActivity}
+          onClose={() => setDocumentActivity(null)}
+        />
       )}
       {isDefaultTemplateOpen && (
         <DefaultTemplateModal onClose={() => setIsDefaultTemplateOpen(false)} />

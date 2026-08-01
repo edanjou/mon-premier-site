@@ -17,10 +17,20 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChessKnight, Crown, Scroll, Swords } from "lucide-react";
+import {
+  Axe,
+  BadgeCheck,
+  ChessKnight,
+  MapPinned,
+  ScrollText,
+  Shield,
+  Swords,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import KingIcon from "@/components/king-icon";
+import { getModuleAccessLevels } from "@/lib/features";
 import { orderItems } from "@/lib/order-items";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
@@ -28,14 +38,18 @@ import { supabase } from "@/lib/supabase";
 type ModuleItem = {
   href: string;
   label: string;
-  icon: typeof Scroll;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
 };
 
 const ALL_MODULES: ModuleItem[] = [
-  { href: "/editeur-carte", label: "Éditeur de carte", icon: Scroll },
-  { href: "/activites", label: "Activités", icon: Swords },
+  { href: "/editeur-carte", label: "Éditeur de carte", icon: MapPinned },
+  { href: "/activites", label: "Campagnes", icon: Swords },
+  { href: "/grandes-batailles", label: "Grandes Batailles", icon: Shield },
+  { href: "/escarmouches", label: "Escarmouches", icon: Axe },
+  { href: "/scenarios", label: "Scénarios", icon: ScrollText },
   { href: "/jeu", label: "Jeu", icon: ChessKnight },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: Crown },
+  { href: "/homologation", label: "Homologation", icon: BadgeCheck },
+  { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
 ];
 
 function SortableModuleCard({
@@ -72,15 +86,15 @@ function SortableModuleCard({
           router.push(module.href);
         }
       }}
-      className={`flex cursor-grab touch-none items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing dark:bg-zinc-900 ${
+      className={`group flex cursor-grab touch-none items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing dark:bg-zinc-900 ${
         isDragging ? "z-10 opacity-50" : ""
       }`}
     >
-      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
-        <Icon size={20} />
+      <div className="icon-badge-hover flex h-[55px] w-[55px] flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
+        <Icon size={25} className="group-hover:animate-wiggle" />
       </div>
       <h2
-        className={`${glofters.className} text-2xl leading-none text-foreground`}
+        className={`${glofters.className} translate-y-[4px] text-[36px] leading-none text-foreground`}
       >
         {module.label}
       </h2>
@@ -102,13 +116,16 @@ export default function DashboardPage() {
   );
 
   useEffect(() => {
-    getOwnProfile().then((profile) => {
+    getOwnProfile().then(async (profile) => {
       setFirstName(profile?.first_name ?? null);
       setUserId(profile?.id ?? null);
-      const available =
-        profile?.role === "admin"
-          ? ALL_MODULES
-          : ALL_MODULES.filter((m) => m.href !== "/utilisateurs");
+      const levels = profile ? await getModuleAccessLevels(profile) : {};
+      const available = ALL_MODULES.filter((m) => {
+        if (m.href === "/utilisateurs") return profile?.role === "admin";
+        if (profile?.role === "admin") return true;
+        const moduleKey = m.href.slice(1);
+        return (levels[moduleKey] ?? "none") !== "none";
+      });
       setModules(orderItems(available, profile?.dashboard_order ?? null));
     });
   }, []);
@@ -149,9 +166,6 @@ export default function DashboardPage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Bonjour{firstName ? ` ${firstName}` : ""}
       </h1>
-      <p className="mt-2 text-foreground/70">
-        Sélectionne un module ci-dessous, ou glisse-le pour réorganiser.
-      </p>
 
       <DndContext
         sensors={sensors}

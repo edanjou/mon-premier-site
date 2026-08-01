@@ -3,6 +3,8 @@ import type { Activity } from "@/lib/activities";
 export const TEMPLATE_TOKENS = [
   "NOMBREMAXFRONT",
   "NOMBREMAXNONPARTICIPANTS",
+  "REPASDINER",
+  "REPASSOUPER",
   "DATELIMITEREPAS",
   "DATELIMITEINSCRIPTION",
   "BONUSPARTICIPANTS",
@@ -35,6 +37,8 @@ export function buildTemplateVariables(
     | "date"
     | "participants_per_front"
     | "non_participants_max"
+    | "meal_lunch_price"
+    | "meal_dinner_price"
     | "bonus_participants"
     | "bonus2_participants"
   >,
@@ -45,6 +49,8 @@ export function buildTemplateVariables(
       activity.non_participants_max != null
         ? String(activity.non_participants_max)
         : "",
+    REPASDINER: activity.meal_lunch_price ?? "",
+    REPASSOUPER: activity.meal_dinner_price ?? "",
     DATELIMITEREPAS: activity.date
       ? formatDate(precedingWeekday(activity.date, 1))
       : "",

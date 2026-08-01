@@ -1,6 +1,7 @@
 import {
   Document,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -10,7 +11,15 @@ import {
   WidthType,
   type IParagraphOptions,
 } from "docx";
-import { FRONT_COLORS, type FrontAssignments } from "@/lib/activity-fronts";
+import type { Activity } from "@/lib/activities";
+import type { ActivityChapter } from "@/lib/activity-chapters";
+import type { DocumentBlock } from "@/lib/activity-document";
+import {
+  FRONT_COLORS,
+  type FrontAssignments,
+  type FrontColor,
+} from "@/lib/activity-fronts";
+import type { ScheduleRow } from "@/lib/activity-schedule";
 
 type RunStyle = {
   bold?: boolean;
@@ -116,79 +125,32 @@ function heading(
   });
 }
 
-function textCell(text: string) {
+function textCell(text: string, widthPercent: number) {
   return new TableCell({
     children: [new Paragraph(text)],
-    width: { size: 33, type: WidthType.PERCENTAGE },
+    width: { size: widthPercent, type: WidthType.PERCENTAGE },
   });
 }
 
-export type ExportScheduleRow = {
-  label: string;
-  startTime: string;
-  duration: string;
-  isChapter: boolean;
-};
-
 export type ExportFrontInfo = {
-  color: string;
+  color: FrontColor;
   guilds: string;
-  organizers: string;
+  organizers: string[];
 };
 
-export type ActivityExportData = {
-  name: string;
-  date: string;
-  gameText: string;
-  registrationParticipantsPricing: string;
-  registrationParticipantsHowto: string;
-  fronts: ExportFrontInfo[];
-  registrationNonParticipantsPricing: string;
-  registrationNonParticipantsHowto: string;
-  scheduleIntro: string;
-  schedule: ExportScheduleRow[];
-  scheduleOutro: string;
-  gameSecurity: string;
-  gameStaff: string;
-  gameRewards: string;
-  gameRules: string;
-  gameDeathHealing: string;
-  gameVaria: string;
-  contactInfo: string;
+const FRONT_COLOR_HEX: Record<FrontColor, string> = {
+  Jaune: "CA8A04",
+  Bleu: "2563EB",
+  Vert: "16A34A",
+  Mauve: "9333EA",
+  Rouge: "DC2626",
+  Blanc: "71717A",
 };
 
 function section(title: string, html: string): Paragraph[] {
   const paragraphs = htmlToParagraphs(html);
   if (paragraphs.length === 0) return [];
   return [heading(title, HeadingLevel.HEADING_3), ...paragraphs];
-}
-
-export function mergeActivitySchedule(
-  chapters: {
-    title: string;
-    start_time: string | null;
-    duration: string | null;
-  }[],
-  blocks: {
-    label: string;
-    start_time: string | null;
-    duration: string | null;
-  }[],
-): ExportScheduleRow[] {
-  return [
-    ...chapters.map((c) => ({
-      label: c.title,
-      startTime: c.start_time ?? "",
-      duration: c.duration ?? "",
-      isChapter: true,
-    })),
-    ...blocks.map((b) => ({
-      label: b.label,
-      startTime: b.start_time ?? "",
-      duration: b.duration ?? "",
-      isChapter: false,
-    })),
-  ].sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
 export function buildFrontsExportInfo(
@@ -204,9 +166,11 @@ export function buildFrontsExportInfo(
       assignments[color].guilds.map((g) => g.name).join(", ") ||
       "Aucune guilde",
     organizers:
-      assignments[color].organizers
-        .map((o) => o.name + (o.email ? ` — ${o.email}` : ""))
-        .join(", ") || "Aucun",
+      assignments[color].organizers.length > 0
+        ? assignments[color].organizers.map(
+            (o) => o.name + (o.email ? ` — ${o.email}` : ""),
+          )
+        : ["Aucun"],
   }));
 }
 
@@ -221,89 +185,270 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function exportActivityToDocx(
-  data: ActivityExportData,
-): Promise<Blob> {
-  const children: (Paragraph | Table)[] = [
-    new Paragraph({
-      text: data.name,
-      heading: HeadingLevel.TITLE,
-    }),
-    new Paragraph({
-      text: data.date,
-      spacing: { after: 200 },
-    }),
-    ...htmlToParagraphs(data.gameText),
+function frontsSection(fronts: ExportFrontInfo[]): Paragraph[] {
+  if (fronts.length === 0) return [];
+  const paragraphs: Paragraph[] = [
+    heading("Fronts et organisateurs", HeadingLevel.HEADING_3),
+  ];
+  fronts.forEach((front) => {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: front.color,
+            bold: true,
+            color: FRONT_COLOR_HEX[front.color],
+          }),
+        ],
+      }),
+      new Paragraph(front.guilds),
+      new Paragraph({
+        children: [
+          new TextRun({ text: "Organisateurs :", bold: true }),
+          ...front.organizers.flatMap((name) => [
+            new TextRun({ text: "", break: 1 }),
+            new TextRun(name),
+          ]),
+        ],
+      }),
+    );
+  });
+  return paragraphs;
+}
 
-    heading("Inscription", HeadingLevel.HEADING_1),
-    heading("Participants", HeadingLevel.HEADING_2),
-    ...section("Tarifs", data.registrationParticipantsPricing),
-    ...section("Pour vous inscrire", data.registrationParticipantsHowto),
+function scheduleTable(rows: ScheduleRow[]): Table[] {
+  if (rows.length === 0) return [];
+  const [startWidth, endWidth, labelWidth] = [15, 15, 70];
+  return [
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: [
+            textCell("Début", startWidth),
+            textCell("Fin", endWidth),
+            textCell("Élément", labelWidth),
+          ],
+        }),
+        ...rows.map(
+          (row) =>
+            new TableRow({
+              children: [
+                textCell(row.startTime || "—", startWidth),
+                textCell(row.endTime || "—", endWidth),
+                textCell(
+                  row.label +
+                    (row.isChapter ? " (Chapitre)" : "") +
+                    (row.hasConflict ? " ⚠ Conflit d'horaire" : ""),
+                  labelWidth,
+                ),
+              ],
+            }),
+        ),
+      ],
+    }),
+  ];
+}
+
+const DOCX_IMAGE_TYPE_BY_MIME: Record<string, "jpg" | "png" | "gif" | "bmp"> =
+  {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+  };
+
+const MAP_IMAGE_MAX_WIDTH = 500;
+
+async function chapterMapImage(url: string): Promise<Paragraph[]> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const blob = await response.blob();
+    const type = DOCX_IMAGE_TYPE_BY_MIME[blob.type];
+    if (!type) return [];
+    const [data, bitmap] = await Promise.all([
+      blob.arrayBuffer().then((buf) => new Uint8Array(buf)),
+      createImageBitmap(blob),
+    ]);
+    const scale = Math.min(1, MAP_IMAGE_MAX_WIDTH / bitmap.width);
+    return [
+      new Paragraph({
+        children: [
+          new ImageRun({
+            type,
+            data,
+            transformation: {
+              width: Math.round(bitmap.width * scale),
+              height: Math.round(bitmap.height * scale),
+            },
+          }),
+        ],
+      }),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+async function chapterChildren(chapter: ActivityChapter): Promise<Paragraph[]> {
+  const children: Paragraph[] = [
+    heading(chapter.title, HeadingLevel.HEADING_1),
+    ...htmlToParagraphs(chapter.game_text),
+    ...(chapter.map_url ? await chapterMapImage(chapter.map_url) : []),
   ];
 
-  if (data.fronts.length > 0) {
-    children.push(heading("Fronts et organisateurs", HeadingLevel.HEADING_3));
-    data.fronts.forEach((front) => {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: front.color, bold: true })],
-        }),
-        new Paragraph(front.guilds),
-        new Paragraph(`Organisateurs : ${front.organizers}`),
-      );
+  if (chapter.objectives.length > 0) {
+    children.push(heading("Objectifs", HeadingLevel.HEADING_3));
+    chapter.objectives.forEach((objective, index) => {
+      children.push(heading(`Objectif ${index + 1}`, HeadingLevel.HEADING_4));
+      children.push(...htmlToParagraphs(objective.description));
+      if (objective.rewards_detail) {
+        children.push(
+          new Paragraph({
+            children: [new TextRun({ text: "Gains : ", bold: true })],
+          }),
+        );
+        children.push(...htmlToParagraphs(objective.rewards_detail));
+      }
     });
   }
 
-  children.push(
-    heading("Non-participants", HeadingLevel.HEADING_2),
-    ...section("Tarifs", data.registrationNonParticipantsPricing),
-    ...section("Pour vous inscrire", data.registrationNonParticipantsHowto),
-
-    heading("Horaire", HeadingLevel.HEADING_1),
-    ...htmlToParagraphs(data.scheduleIntro),
-  );
-
-  if (data.schedule.length > 0) {
+  const scheduleInfo = [chapter.start_time, chapter.duration]
+    .filter(Boolean)
+    .join(" — ");
+  if (scheduleInfo) {
     children.push(
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: [
-          new TableRow({
-            children: [
-              textCell("Heure"),
-              textCell("Élément"),
-              textCell("Durée"),
-            ],
-          }),
-          ...data.schedule.map(
-            (row) =>
-              new TableRow({
-                children: [
-                  textCell(row.startTime || "—"),
-                  textCell(row.label + (row.isChapter ? " (Chapitre)" : "")),
-                  textCell(row.duration || "—"),
-                ],
-              }),
-          ),
-        ],
-      }),
+      heading("Horaire du chapitre", HeadingLevel.HEADING_3),
+      new Paragraph(scheduleInfo),
     );
   }
 
   children.push(
-    ...htmlToParagraphs(data.scheduleOutro),
-
-    heading("Éléments jeux", HeadingLevel.HEADING_1),
-    ...section("Sécurité", data.gameSecurity),
-    ...section("États-major", data.gameStaff),
-    ...section("Gains", data.gameRewards),
-    ...section("Règles", data.gameRules),
-    ...section("Mort et guérison", data.gameDeathHealing),
-    ...section("Varia", data.gameVaria),
-
-    heading("Nous joindre", HeadingLevel.HEADING_1),
-    ...htmlToParagraphs(data.contactInfo),
+    ...section("Limites de terrain", chapter.terrain_limits ?? ""),
+    ...section("Règles spéciales", chapter.special_rules ?? ""),
+    ...section("Éléments spéciaux", chapter.special_elements ?? ""),
+    ...section(
+      "Monstres et machines de guerre",
+      chapter.monsters_war_machines ?? "",
+    ),
   );
+
+  if (chapter.healing_mode && chapter.healing_mode.length > 0) {
+    children.push(
+      heading("Mode de guérison", HeadingLevel.HEADING_3),
+      new Paragraph(chapter.healing_mode.join(", ")),
+    );
+  }
+  children.push(
+    ...section(
+      "Détails du mode de guérison",
+      chapter.healing_mode_details ?? "",
+    ),
+  );
+
+  return children;
+}
+
+export async function exportActivityDocumentToDocx(input: {
+  activity: Activity;
+  formattedDate: string;
+  chapters: ActivityChapter[];
+  blocks: DocumentBlock[];
+  scheduleRows: ScheduleRow[];
+  scheduleIntro: string;
+  scheduleOutro: string;
+  fronts: ExportFrontInfo[];
+}): Promise<Blob> {
+  const {
+    activity,
+    formattedDate,
+    chapters,
+    blocks,
+    scheduleRows,
+    scheduleIntro,
+    scheduleOutro,
+    fronts,
+  } = input;
+  const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({ text: activity.name, heading: HeadingLevel.TITLE }),
+    new Paragraph({ text: formattedDate, spacing: { after: 200 } }),
+  ];
+
+  for (const block of blocks) {
+    switch (block.block_type) {
+      case "game_text":
+        children.push(...htmlToParagraphs(activity.game_text));
+        break;
+      case "details_registration":
+        children.push(
+          heading("Inscription", HeadingLevel.HEADING_1),
+          heading("Participants", HeadingLevel.HEADING_2),
+          ...section("Tarifs", activity.registration_participants_pricing ?? ""),
+          ...section(
+            "Pour vous inscrire",
+            activity.registration_participants_howto ?? "",
+          ),
+          ...frontsSection(fronts),
+          heading("Non-participants", HeadingLevel.HEADING_2),
+          ...section(
+            "Tarifs",
+            activity.registration_non_participants_pricing ?? "",
+          ),
+          ...section(
+            "Pour vous inscrire",
+            activity.registration_non_participants_howto ?? "",
+          ),
+        );
+        break;
+      case "details_schedule": {
+        const table = scheduleTable(scheduleRows);
+        children.push(
+          heading("Horaire", HeadingLevel.HEADING_1),
+          ...htmlToParagraphs(scheduleIntro),
+          ...(table.length > 0
+            ? [heading("Horaire de la journée", HeadingLevel.HEADING_3)]
+            : []),
+          ...table,
+          ...htmlToParagraphs(scheduleOutro),
+        );
+        break;
+      }
+      case "details_game_elements":
+        children.push(
+          heading("Éléments jeux", HeadingLevel.HEADING_1),
+          ...section("Sécurité", activity.game_security ?? ""),
+          ...section("États-major", activity.game_staff ?? ""),
+          ...section("Gains", activity.game_rewards ?? ""),
+          ...section("Règles", activity.game_rules ?? ""),
+          ...section("Mort et guérison", activity.game_death_healing ?? ""),
+          ...section("Varia", activity.game_varia ?? ""),
+        );
+        break;
+      case "details_contact":
+        children.push(
+          heading("Nous joindre", HeadingLevel.HEADING_1),
+          ...htmlToParagraphs(activity.contact_info),
+        );
+        break;
+      case "chapter": {
+        const chapter = block.chapter_id
+          ? chapterById.get(block.chapter_id)
+          : undefined;
+        if (chapter) children.push(...(await chapterChildren(chapter)));
+        break;
+      }
+      case "custom_text":
+        if (block.label) {
+          children.push(heading(block.label, HeadingLevel.HEADING_3));
+        }
+        children.push(...htmlToParagraphs(block.content));
+        break;
+    }
+  }
 
   const doc = new Document({
     sections: [{ children }],

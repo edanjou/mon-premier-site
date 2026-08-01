@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { decodeHtmlEntities } from "@/lib/text";
 
 export type GuildSeal = {
   external_id: number;
@@ -16,5 +17,8 @@ export async function listGuildSeals(): Promise<GuildSeal[]> {
     .order("seal_type", { ascending: true });
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((s) => ({
+    ...s,
+    guilds: s.guilds ? { name: decodeHtmlEntities(s.guilds.name) } : null,
+  }));
 }

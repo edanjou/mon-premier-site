@@ -18,20 +18,24 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Axe,
+  BadgeCheck,
   Castle,
   ChessKnight,
-  Crown,
   Hammer,
   LogOut,
-  Scroll,
+  MapPinned,
+  ScrollText,
+  Shield,
   ShieldUser,
   Swords,
-  UserRound,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import KingIcon from "@/components/king-icon";
+import { getModuleAccessLevels } from "@/lib/features";
 import { orderItems } from "@/lib/order-items";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
@@ -41,27 +45,6 @@ type IconComponent = React.ComponentType<{
   className?: string;
 }>;
 
-function KingIcon({
-  size = 20,
-  className,
-}: {
-  size?: number;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`relative inline-flex items-center justify-center ${className ?? ""}`}
-      style={{ width: size, height: size }}
-    >
-      <UserRound size={size} />
-      <Crown
-        size={Math.round(size * 0.55)}
-        className="absolute -top-1 left-1/2 -translate-x-1/2"
-      />
-    </span>
-  );
-}
-
 type NavItem = {
   href: string;
   label: string;
@@ -69,9 +52,13 @@ type NavItem = {
 };
 
 const ALL_MODULE_ITEMS: NavItem[] = [
-  { href: "/editeur-carte", label: "Éditeur de carte", icon: Scroll },
-  { href: "/activites", label: "Activités", icon: Swords },
+  { href: "/editeur-carte", label: "Éditeur de carte", icon: MapPinned },
+  { href: "/activites", label: "Campagnes", icon: Swords },
+  { href: "/grandes-batailles", label: "Grandes Batailles", icon: Shield },
+  { href: "/escarmouches", label: "Escarmouches", icon: Axe },
+  { href: "/scenarios", label: "Scénarios", icon: ScrollText },
   { href: "/jeu", label: "Jeu", icon: ChessKnight },
+  { href: "/homologation", label: "Homologation", icon: BadgeCheck },
   { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
 ];
 
@@ -114,7 +101,7 @@ function SidebarItem({
   const content = (
     <>
       {iconElement}
-      <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
+      <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
         {label}
       </span>
     </>
@@ -181,7 +168,7 @@ function SortableSidebarItem({
       aria-label={item.label}
     >
       <Icon size={20} className="flex-shrink-0" />
-      <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
+      <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
         {item.label}
       </span>
     </div>
@@ -197,6 +184,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [isChecking, setIsChecking] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [moduleItems, setModuleItems] = useState<NavItem[]>([]);
   const suppressClickRef = useRef(false);
 
@@ -225,12 +213,16 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (isChecking) return;
-    getOwnProfile().then((profile) => {
+    getOwnProfile().then(async (profile) => {
       setUserId(profile?.id ?? null);
-      const available =
-        profile?.role === "admin"
-          ? ALL_MODULE_ITEMS
-          : ALL_MODULE_ITEMS.filter((item) => item.href !== "/utilisateurs");
+      setIsAdmin(profile?.role === "admin");
+      const levels = profile ? await getModuleAccessLevels(profile) : {};
+      const available = ALL_MODULE_ITEMS.filter((item) => {
+        if (item.href === "/utilisateurs") return profile?.role === "admin";
+        if (profile?.role === "admin") return true;
+        const moduleKey = item.href.slice(1);
+        return (levels[moduleKey] ?? "none") !== "none";
+      });
       setModuleItems(orderItems(available, profile?.sidebar_order ?? null));
     });
   }, [isChecking]);
@@ -324,7 +316,9 @@ export default function DashboardLayout({
           </div>
 
           <div className="mt-auto flex w-full flex-col items-center gap-2">
-            {BOTTOM_NAV_ITEMS.map((item) => (
+            {BOTTOM_NAV_ITEMS.filter(
+              (item) => item.href !== "/parametres" || isAdmin,
+            ).map((item) => (
               <SidebarItem
                 key={item.href}
                 href={item.href}
