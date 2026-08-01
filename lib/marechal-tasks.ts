@@ -95,14 +95,16 @@ export async function createMarechalTask(input: {
   task_type_id: string | null;
   is_ramassage: boolean;
 }): Promise<MarechalTask> {
-  const { count } = await supabase
+  const { data: lowest } = await supabase
     .from("marechal_tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("chapter_id", input.chapter_id);
+    .select("position")
+    .order("position", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   const { data, error } = await supabase
     .from("marechal_tasks")
-    .insert({ ...input, position: count ?? 0 })
+    .insert({ ...input, position: (lowest?.position ?? 0) - 1 })
     .select(TASK_SELECT)
     .single();
   if (error) throw error;

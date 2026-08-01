@@ -2,39 +2,44 @@
 
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Bold,
   Italic,
   List,
   ListOrdered,
   Quote,
+  Sparkles,
   Strikethrough,
   Underline as UnderlineIcon,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 function ToolbarButton({
   onClick,
   active,
   label,
+  disabled,
   children,
 }: {
   onClick: () => void;
   active: boolean;
   label: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={label}
       aria-label={label}
       className={`rounded p-1.5 transition-colors ${
         active
           ? "bg-primary text-white"
           : "text-foreground/70 hover:bg-black/[.06] dark:hover:bg-white/[.08]"
-      }`}
+      } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {children}
     </button>
@@ -42,6 +47,48 @@ function ToolbarButton({
 }
 
 function Toolbar({ editor }: { editor: Editor }) {
+  const [hasSelection, setHasSelection] = useState(
+    !editor.state.selection.empty,
+  );
+  const [isRewriting, setIsRewriting] = useState(false);
+
+  useEffect(() => {
+    const updateSelection = () => setHasSelection(!editor.state.selection.empty);
+    editor.on("selectionUpdate", updateSelection);
+    editor.on("transaction", updateSelection);
+    return () => {
+      editor.off("selectionUpdate", updateSelection);
+      editor.off("transaction", updateSelection);
+    };
+  }, [editor]);
+
+  const handleRewrite = async () => {
+    const { from, to } = editor.state.selection;
+    const text = editor.state.doc.textBetween(from, to, "\n");
+    if (!text.trim()) return;
+    setIsRewriting(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Session expirée.");
+      const res = await fetch("/api/ai/rewrite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ text }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error);
+      editor.chain().focus().insertContentAt({ from, to }, body.result).run();
+    } catch {
+      alert("Échec de la reformulation par l'IA.");
+    } finally {
+      setIsRewriting(false);
+    }
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-black/[.08] bg-black/[.02] p-1.5 dark:border-white/[.145] dark:bg-white/[.03]">
       <ToolbarButton
@@ -93,6 +140,19 @@ function Toolbar({ editor }: { editor: Editor }) {
         label="Citation"
       >
         <Quote size={16} />
+      </ToolbarButton>
+      <div className="mx-1 h-4 w-px bg-black/[.08] dark:bg-white/[.145]" />
+      <ToolbarButton
+        onClick={handleRewrite}
+        active={false}
+        disabled={!hasSelection || isRewriting}
+        label={
+          hasSelection
+            ? "Reformuler avec l'IA"
+            : "Sélectionnez du texte pour le reformuler avec l'IA"
+        }
+      >
+        <Sparkles size={16} />
       </ToolbarButton>
     </div>
   );

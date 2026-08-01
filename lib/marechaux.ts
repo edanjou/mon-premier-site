@@ -3,7 +3,9 @@ import { supabase } from "@/lib/supabase";
 export type Marechal = {
   id: string;
   character_id: number;
-  formation_completed: boolean;
+  formation_2025: boolean;
+  formation_2026: boolean;
+  is_campaign_team: boolean;
   notes: string | null;
   created_at: string;
   name: string;
@@ -20,7 +22,9 @@ type RawCharacterJoin = {
 type RawMarechal = {
   id: string;
   character_id: number;
-  formation_completed: boolean;
+  formation_2025: boolean;
+  formation_2026: boolean;
+  is_campaign_team: boolean;
   notes: string | null;
   created_at: string;
   characters: RawCharacterJoin | RawCharacterJoin[];
@@ -38,7 +42,9 @@ function normalizeMarechal(row: RawMarechal): Marechal {
   return {
     id: row.id,
     character_id: row.character_id,
-    formation_completed: row.formation_completed,
+    formation_2025: row.formation_2025,
+    formation_2026: row.formation_2026,
+    is_campaign_team: row.is_campaign_team,
     notes: row.notes,
     created_at: row.created_at,
     name: character?.name ?? "",
@@ -48,7 +54,7 @@ function normalizeMarechal(row: RawMarechal): Marechal {
 }
 
 const MARECHAL_SELECT =
-  "id, character_id, formation_completed, notes, created_at, characters(name, player_name, guilds(name))";
+  "id, character_id, formation_2025, formation_2026, is_campaign_team, notes, created_at, characters(name, player_name, guilds(name))";
 
 export async function listMarechaux(): Promise<Marechal[]> {
   const { data, error } = await supabase
@@ -71,11 +77,26 @@ export async function addMarechal(characterId: number): Promise<Marechal> {
 
 export async function updateMarechal(
   id: string,
-  input: { formation_completed: boolean; notes: string | null },
+  input: {
+    is_campaign_team: boolean;
+    notes: string | null;
+  },
 ): Promise<void> {
   const { error } = await supabase
     .from("marechaux")
     .update(input)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function setMarechalFormation(
+  id: string,
+  field: "formation_2025" | "formation_2026",
+  value: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("marechaux")
+    .update({ [field]: value })
     .eq("id", id);
   if (error) throw error;
 }
@@ -155,6 +176,68 @@ export async function listAssignedActivityCountByMarechal(): Promise<
   const counts: Record<string, number> = {};
   (data ?? []).forEach((row) => {
     counts[row.marechal_id] = (counts[row.marechal_id] ?? 0) + 1;
+  });
+  return counts;
+}
+
+export async function listAssignedMarechalIdsByActivity(): Promise<
+  Record<string, string[]>
+> {
+  const { data, error } = await supabase
+    .from("marechal_activity_status")
+    .select("activity_id, marechal_id")
+    .eq("is_assigned", true);
+  if (error) throw error;
+  const map: Record<string, string[]> = {};
+  (data ?? []).forEach((row) => {
+    (map[row.activity_id] ??= []).push(row.marechal_id);
+  });
+  return map;
+}
+
+export async function listNonCampaignTeamStatusCounts(): Promise<
+  Record<string, { available: number; assigned: number }>
+> {
+  const [{ data: statusRows, error: statusError }, { data: teamRows, error: teamError }] =
+    await Promise.all([
+      supabase
+        .from("marechal_activity_status")
+        .select("activity_id, marechal_id, is_available, is_assigned"),
+      supabase.from("marechaux").select("id").eq("is_campaign_team", true),
+    ]);
+  if (statusError) throw statusError;
+  if (teamError) throw teamError;
+  const teamIds = new Set((teamRows ?? []).map((row) => row.id));
+  const counts: Record<string, { available: number; assigned: number }> = {};
+  (statusRows ?? []).forEach((row) => {
+    if (teamIds.has(row.marechal_id)) return;
+    const entry = counts[row.activity_id] ?? { available: 0, assigned: 0 };
+    if (row.is_available) entry.available += 1;
+    if (row.is_assigned) entry.assigned += 1;
+    counts[row.activity_id] = entry;
+  });
+  return counts;
+}
+
+export async function listCampaignTeamAssignedCounts(): Promise<
+  Record<string, number>
+> {
+  const [{ data: statusRows, error: statusError }, { data: teamRows, error: teamError }] =
+    await Promise.all([
+      supabase
+        .from("marechal_activity_status")
+        .select("activity_id, marechal_id")
+        .eq("is_assigned", true),
+      supabase.from("marechaux").select("id").eq("is_campaign_team", true),
+    ]);
+  if (statusError) throw statusError;
+  if (teamError) throw teamError;
+  const teamIds = new Set((teamRows ?? []).map((row) => row.id));
+  const counts: Record<string, number> = {};
+  (statusRows ?? []).forEach((row) => {
+    if (teamIds.has(row.marechal_id)) {
+      counts[row.activity_id] = (counts[row.activity_id] ?? 0) + 1;
+    }
   });
   return counts;
 }

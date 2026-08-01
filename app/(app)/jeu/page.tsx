@@ -453,7 +453,9 @@ function SablierStat({
       <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
         <Icon size={20} />
       </div>
-      <p className="text-3xl font-semibold text-foreground">{value}</p>
+      <p className={`${glofters.className} text-3xl font-semibold text-foreground`}>
+        {value}
+      </p>
     </div>
   );
 }

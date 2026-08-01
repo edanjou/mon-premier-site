@@ -440,6 +440,82 @@ function MediaLibraryPanel({
   );
 }
 
+function MediaSidebar({
+  entries,
+  currentPath,
+  isLoading,
+  onEnterFolder,
+  onGoBack,
+}: {
+  entries: MediaEntry[];
+  currentPath: string;
+  isLoading: boolean;
+  onEnterFolder: (path: string) => void;
+  onGoBack: () => void;
+}) {
+  return (
+    <div className="flex w-48 flex-shrink-0 flex-col gap-2 rounded-xl border border-black/[.08] bg-white p-3 dark:border-white/[.145] dark:bg-zinc-900">
+      <div className="flex items-center gap-1">
+        {currentPath && (
+          <button
+            type="button"
+            onClick={onGoBack}
+            aria-label="Retour"
+            className="toolbar-button rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <ArrowLeft size={16} />
+          </button>
+        )}
+        <span className="truncate text-xs font-semibold text-foreground/70">
+          {currentPath || "Banque d'images"}
+        </span>
+      </div>
+
+      {isLoading && (
+        <p className="text-xs text-foreground/50">Chargement…</p>
+      )}
+      {!isLoading && entries.length === 0 && (
+        <p className="text-xs text-foreground/50">Ce dossier est vide.</p>
+      )}
+
+      <div className="grid max-h-[70vh] grid-cols-2 gap-2 overflow-y-auto">
+        {entries.map((entry) =>
+          entry.type === "folder" ? (
+            <button
+              key={entry.path}
+              type="button"
+              onClick={() => onEnterFolder(entry.path)}
+              className="picker-button flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-black/[.08] bg-zinc-50 p-2 dark:border-white/[.145] dark:bg-zinc-800"
+            >
+              <Folder size={24} className="text-zinc-400" />
+              <span className="max-w-full truncate text-[10px] text-zinc-600 dark:text-zinc-400">
+                {entry.name}
+              </span>
+            </button>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={entry.path}
+              src={entry.url}
+              alt={entry.name}
+              title={entry.name}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", entry.url);
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+              className="aspect-square w-full cursor-grab rounded-lg border border-black/[.08] bg-zinc-100 object-contain p-1 active:cursor-grabbing dark:border-white/[.145] dark:bg-zinc-800"
+            />
+          ),
+        )}
+      </div>
+      <p className="text-[10px] text-foreground/40">
+        Glissez une image sur le plan pour l&apos;ajouter.
+      </p>
+    </div>
+  );
+}
+
 function FolderPickerModal({
   folders,
   fileCount,
@@ -1020,7 +1096,7 @@ export default function MapEditor({
     height: 800,
   });
   const [libraryEntries, setLibraryEntries] = useState<MediaEntry[]>([]);
-  const [libraryPath, setLibraryPath] = useState("");
+  const [libraryPath, setLibraryPath] = useState(DEFAULT_LIBRARY_FOLDER);
   const [selectedMediaPaths, setSelectedMediaPaths] = useState<string[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
@@ -1313,7 +1389,10 @@ export default function MapEditor({
     }
   };
 
-  const addOverlaysFromMedia = async (files: { url: string }[]) => {
+  const addOverlaysFromMedia = async (
+    files: { url: string }[],
+    dropCenter?: { x: number; y: number },
+  ) => {
     const newOverlays: OverlayShape[] = [];
     let cascade = overlays.length;
 
@@ -1322,12 +1401,21 @@ export default function MapEditor({
       const scale = OVERLAY_SCALE;
       const w = width * scale;
       const h = height * scale;
-      const offset = cascade * 24;
+      let x: number;
+      let y: number;
+      if (dropCenter) {
+        x = dropCenter.x - w / 2;
+        y = dropCenter.y - h / 2;
+      } else {
+        const offset = cascade * 24;
+        x = canvasSize.width / 2 - w / 2 + offset;
+        y = canvasSize.height / 2 - h / 2 + offset;
+      }
       newOverlays.push({
         id: crypto.randomUUID(),
         src: file.url,
-        x: canvasSize.width / 2 - w / 2 + offset,
-        y: canvasSize.height / 2 - h / 2 + offset,
+        x,
+        y,
         width: w,
         height: h,
         rotation: 0,
@@ -1373,6 +1461,24 @@ export default function MapEditor({
   const handleAddLibraryOverlay = async (file: MediaFile) => {
     await addOverlaysFromMedia([file]);
     setIsLibraryOpen(false);
+  };
+
+  const handleCanvasDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleCanvasDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    const url = e.dataTransfer.getData("text/plain");
+    if (!url) return;
+    e.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.setPointersPositions(e.nativeEvent);
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return;
+    await addOverlaysFromMedia([{ url }], pos);
   };
 
   const handleDeleteFile = async (file: MediaFile) => {
@@ -2431,6 +2537,8 @@ export default function MapEditor({
           <div
             className="mx-auto overflow-hidden rounded border border-zinc-300 bg-white dark:border-zinc-700"
             style={{ width: displayWidth, height: displayHeight }}
+            onDragOver={handleCanvasDragOver}
+            onDrop={handleCanvasDrop}
           >
             <Stage
               ref={stageRef}
@@ -2595,6 +2703,14 @@ export default function MapEditor({
             </Stage>
           </div>
         </div>
+
+        <MediaSidebar
+          entries={libraryEntries}
+          currentPath={libraryPath}
+          isLoading={isLoadingLibrary}
+          onEnterFolder={handleEnterFolder}
+          onGoBack={handleGoBackInLibrary}
+        />
       </div>
 
       <p className="max-w-2xl text-center text-sm text-zinc-500 dark:text-zinc-400">

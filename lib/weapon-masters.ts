@@ -1,10 +1,9 @@
 import { supabase } from "@/lib/supabase";
 
-export type Medic = {
+export type WeaponMaster = {
   id: string;
   character_id: number;
   created_at: string;
-  is_responsable: boolean;
   name: string;
   player_name: string | null;
 };
@@ -14,15 +13,14 @@ type RawCharacterJoin = {
   player_name: string | null;
 } | null;
 
-type RawMedic = {
+type RawWeaponMaster = {
   id: string;
   character_id: number;
   created_at: string;
-  is_responsable: boolean;
   characters: RawCharacterJoin | RawCharacterJoin[];
 };
 
-function normalizeMedic(row: RawMedic): Medic {
+function normalizeWeaponMaster(row: RawWeaponMaster): WeaponMaster {
   const character = Array.isArray(row.characters)
     ? (row.characters[0] ?? null)
     : row.characters;
@@ -30,100 +28,99 @@ function normalizeMedic(row: RawMedic): Medic {
     id: row.id,
     character_id: row.character_id,
     created_at: row.created_at,
-    is_responsable: row.is_responsable,
     name: character?.name ?? "",
     player_name: character?.player_name ?? null,
   };
 }
 
-const MEDIC_SELECT =
-  "id, character_id, created_at, is_responsable, characters(name, player_name)";
+const WEAPON_MASTER_SELECT =
+  "id, character_id, created_at, characters(name, player_name)";
 
-export async function listMedics(): Promise<Medic[]> {
+export async function listWeaponMasters(): Promise<WeaponMaster[]> {
   const { data, error } = await supabase
-    .from("medics")
-    .select(MEDIC_SELECT)
+    .from("weapon_masters")
+    .select(WEAPON_MASTER_SELECT)
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((row) => normalizeMedic(row as RawMedic));
+  return (data ?? []).map((row) => normalizeWeaponMaster(row as RawWeaponMaster));
 }
 
-export async function addMedic(characterId: number): Promise<Medic> {
+export async function addWeaponMaster(
+  characterId: number,
+): Promise<WeaponMaster> {
   const { data, error } = await supabase
-    .from("medics")
+    .from("weapon_masters")
     .insert({ character_id: characterId })
-    .select(MEDIC_SELECT)
+    .select(WEAPON_MASTER_SELECT)
     .single();
   if (error) throw error;
-  return normalizeMedic(data as RawMedic);
+  return normalizeWeaponMaster(data as RawWeaponMaster);
 }
 
-export async function removeMedic(id: string): Promise<void> {
-  const { error } = await supabase.from("medics").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function setResponsableMedic(id: string | null): Promise<void> {
-  const { error: clearError } = await supabase
-    .from("medics")
-    .update({ is_responsable: false })
-    .eq("is_responsable", true);
-  if (clearError) throw clearError;
-  if (!id) return;
+export async function removeWeaponMaster(id: string): Promise<void> {
   const { error } = await supabase
-    .from("medics")
-    .update({ is_responsable: true })
+    .from("weapon_masters")
+    .delete()
     .eq("id", id);
   if (error) throw error;
 }
 
-export type MedicActivityStatus = {
-  medic_id: string;
+export type WeaponMasterActivityStatus = {
+  weapon_master_id: string;
   activity_id: string;
   is_available: boolean;
   is_assigned: boolean;
+  front_color: string | null;
 };
 
-export async function listMedicActivityStatuses(
+export async function listWeaponMasterActivityStatuses(
   activityId: string,
-): Promise<MedicActivityStatus[]> {
+): Promise<WeaponMasterActivityStatus[]> {
   const { data, error } = await supabase
-    .from("medic_activity_status")
-    .select("medic_id, activity_id, is_available, is_assigned")
+    .from("weapon_master_activity_status")
+    .select("weapon_master_id, activity_id, is_available, is_assigned, front_color")
     .eq("activity_id", activityId);
   if (error) throw error;
   return data ?? [];
 }
 
-export async function setMedicActivityStatus(
-  medicId: string,
+export async function setWeaponMasterActivityStatus(
+  weaponMasterId: string,
   activityId: string,
-  input: { is_available?: boolean; is_assigned?: boolean },
+  input: {
+    is_available?: boolean;
+    is_assigned?: boolean;
+    front_color?: string | null;
+  },
 ): Promise<void> {
   const { data: existing } = await supabase
-    .from("medic_activity_status")
-    .select("is_available, is_assigned")
-    .eq("medic_id", medicId)
+    .from("weapon_master_activity_status")
+    .select("is_available, is_assigned, front_color")
+    .eq("weapon_master_id", weaponMasterId)
     .eq("activity_id", activityId)
     .maybeSingle();
 
-  const { error } = await supabase.from("medic_activity_status").upsert(
+  const { error } = await supabase.from("weapon_master_activity_status").upsert(
     {
-      medic_id: medicId,
+      weapon_master_id: weaponMasterId,
       activity_id: activityId,
       is_available: input.is_available ?? existing?.is_available ?? false,
       is_assigned: input.is_assigned ?? existing?.is_assigned ?? false,
+      front_color:
+        input.front_color !== undefined
+          ? input.front_color
+          : (existing?.front_color ?? null),
     },
-    { onConflict: "medic_id,activity_id" },
+    { onConflict: "weapon_master_id,activity_id" },
   );
   if (error) throw error;
 }
 
-export async function listMedicActivityStatusCounts(): Promise<
+export async function listWeaponMasterActivityStatusCounts(): Promise<
   Record<string, { available: number; assigned: number }>
 > {
   const { data, error } = await supabase
-    .from("medic_activity_status")
+    .from("weapon_master_activity_status")
     .select("activity_id, is_available, is_assigned");
   if (error) throw error;
   const counts: Record<string, { available: number; assigned: number }> = {};
