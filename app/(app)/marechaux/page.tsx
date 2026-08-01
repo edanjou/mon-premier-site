@@ -60,7 +60,13 @@ const TABS: { key: Tab; label: string; icon: typeof PocketKnife }[] = [
   { key: "medics", label: "Médics", icon: Cross },
 ];
 
-type ActivityRow = { id: string; name: string; date: string };
+type ActivityRow = {
+  id: string;
+  name: string;
+  date: string;
+  marshal_count: number | null;
+  healer_count: number | null;
+};
 
 const pillClassName = (active: boolean) =>
   `rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
@@ -471,6 +477,23 @@ function StatusModal({
       is_assigned: false,
     };
     const next = { ...current, [field]: !current[field] };
+
+    if (
+      field === "is_assigned" &&
+      next.is_assigned &&
+      activity.marshal_count != null
+    ) {
+      const assignedCount = Object.values(statuses).filter(
+        (s) => s.is_assigned,
+      ).length;
+      if (assignedCount >= activity.marshal_count) {
+        alert(
+          `Le nombre de maréchaux assignés (${activity.marshal_count}) prévu pour cette campagne est déjà atteint.`,
+        );
+        return;
+      }
+    }
+
     setStatuses((prev) => ({ ...prev, [marechalId]: next }));
     try {
       await setMarechalActivityStatus(marechalId, activity.id, {
@@ -568,7 +591,7 @@ function ActivitesTab({ marechaux }: { marechaux: Marechal[] }) {
       const [{ data, error: fetchError }, countsResult] = await Promise.all([
         supabase
           .from("activities")
-          .select("id, name, date")
+          .select("id, name, date, marshal_count, healer_count")
           .order("date", { ascending: true }),
         listActivityStatusCounts(),
       ]);
@@ -662,6 +685,7 @@ function ActivitesTab({ marechaux }: { marechaux: Marechal[] }) {
 function TachesTab({ marechaux }: { marechaux: Marechal[] }) {
   const [tasks, setTasks] = useState<MarechalTask[]>([]);
   const [filter, setFilter] = useState<"toutes" | "ramassage">("toutes");
+  const [filterActivityId, setFilterActivityId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -692,7 +716,7 @@ function TachesTab({ marechaux }: { marechaux: Marechal[] }) {
     fetchTasks();
     supabase
       .from("activities")
-      .select("id, name, date")
+      .select("id, name, date, marshal_count, healer_count")
       .order("date", { ascending: true })
       .then(({ data }) => setActivities(data ?? []));
     listTaskTypes().then(setTaskTypes);
@@ -808,8 +832,10 @@ function TachesTab({ marechaux }: { marechaux: Marechal[] }) {
     }
   };
 
-  const visibleTasks = tasks.filter((t) =>
-    filter === "ramassage" ? t.is_ramassage : true,
+  const visibleTasks = tasks.filter(
+    (t) =>
+      (filter === "ramassage" ? t.is_ramassage : true) &&
+      (filterActivityId ? t.activity_id === filterActivityId : true),
   );
 
   return (
@@ -906,7 +932,7 @@ function TachesTab({ marechaux }: { marechaux: Marechal[] }) {
         </button>
       </form>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setFilter("toutes")}
@@ -921,6 +947,19 @@ function TachesTab({ marechaux }: { marechaux: Marechal[] }) {
         >
           Ramassage
         </button>
+        <select
+          name="marechal-task-filter-activity"
+          value={filterActivityId}
+          onChange={(e) => setFilterActivityId(e.target.value)}
+          className="rounded-full border border-black/[.08] bg-white px-3 py-1 text-xs font-medium text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        >
+          <option value="">Toutes les activités</option>
+          {activities.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {isLoading && (
@@ -1067,6 +1106,23 @@ function MedicStatusModal({
       is_assigned: false,
     };
     const next = { ...current, [field]: !current[field] };
+
+    if (
+      field === "is_assigned" &&
+      next.is_assigned &&
+      activity.healer_count != null
+    ) {
+      const assignedCount = Object.values(statuses).filter(
+        (s) => s.is_assigned,
+      ).length;
+      if (assignedCount >= activity.healer_count) {
+        alert(
+          `Le nombre de médics assignés (${activity.healer_count}) prévu pour cette campagne est déjà atteint.`,
+        );
+        return;
+      }
+    }
+
     setStatuses((prev) => ({ ...prev, [medicId]: next }));
     try {
       await setMedicActivityStatus(medicId, activity.id, {
@@ -1179,7 +1235,7 @@ function MedicsTab() {
       const [{ data }, countsResult] = await Promise.all([
         supabase
           .from("activities")
-          .select("id, name, date")
+          .select("id, name, date, marshal_count, healer_count")
           .order("date", { ascending: true }),
         listMedicActivityStatusCounts(),
       ]);
