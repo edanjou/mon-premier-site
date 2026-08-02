@@ -47,24 +47,23 @@ function ToolbarButton({
 }
 
 function Toolbar({ editor }: { editor: Editor }) {
-  const [hasSelection, setHasSelection] = useState(
-    !editor.state.selection.empty,
-  );
+  const [hasContent, setHasContent] = useState(!editor.isEmpty);
   const [isRewriting, setIsRewriting] = useState(false);
 
   useEffect(() => {
-    const updateSelection = () => setHasSelection(!editor.state.selection.empty);
-    editor.on("selectionUpdate", updateSelection);
-    editor.on("transaction", updateSelection);
+    const updateState = () => setHasContent(!editor.isEmpty);
+    editor.on("transaction", updateState);
     return () => {
-      editor.off("selectionUpdate", updateSelection);
-      editor.off("transaction", updateSelection);
+      editor.off("transaction", updateState);
     };
   }, [editor]);
 
   const handleRewrite = async () => {
-    const { from, to } = editor.state.selection;
-    const text = editor.state.doc.textBetween(from, to, "\n");
+    const { from, to, empty } = editor.state.selection;
+    const range = empty
+      ? { from: 0, to: editor.state.doc.content.size }
+      : { from, to };
+    const text = editor.state.doc.textBetween(range.from, range.to, "\n");
     if (!text.trim()) return;
     setIsRewriting(true);
     try {
@@ -81,7 +80,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error);
-      editor.chain().focus().insertContentAt({ from, to }, body.result).run();
+      editor.chain().focus().insertContentAt(range, body.result).run();
     } catch {
       alert("Échec de la reformulation par l'IA.");
     } finally {
@@ -145,11 +144,11 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton
         onClick={handleRewrite}
         active={false}
-        disabled={!hasSelection || isRewriting}
+        disabled={!hasContent || isRewriting}
         label={
-          hasSelection
-            ? "Reformuler avec l'IA"
-            : "Sélectionnez du texte pour le reformuler avec l'IA"
+          isRewriting
+            ? "Reformulation en cours…"
+            : "Reformuler avec l'IA (le texte sélectionné, ou tout le champ si rien n'est sélectionné)"
         }
       >
         <Sparkles size={16} />
