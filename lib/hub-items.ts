@@ -28,63 +28,40 @@ import {
 import type { HubItem, OrderColumn } from "@/components/module-hub";
 import BicollineIcon from "@/components/bicolline-icon";
 
-export const DASHBOARD_ITEMS: HubItem[] = [
-  { href: "/campagnes", label: "Campagnes", icon: Swords, noGate: true },
+export const COMBAT_ITEMS: HubItem[] = [
   {
-    href: "/grande-bataille",
-    label: "Grande Bataille",
-    icon: BicollineIcon,
-    noGate: true,
+    href: "/grande-bataille/combat/choses-a-faire",
+    label: "Choses à faire",
+    icon: ListChecks,
+    moduleKey: "grandes-batailles",
   },
   {
-    href: "/scenarios",
-    label: "Scénarios spéciaux",
-    icon: ScrollText,
-    moduleKey: "scenarios",
+    href: "/grande-bataille/combat/escarmouches",
+    label: "Escarmouches",
+    icon: Axe,
   },
-  { href: "/jeu", label: "Jeu", icon: ChessKnight, moduleKey: "jeu" },
   {
-    href: "#tournoi-des-nations",
-    label: "Tournoi des nations",
-    icon: Flag,
+    href: "/grande-bataille/combat/homologation",
+    label: "Homologation",
+    icon: BadgeCheck,
+  },
+  {
+    href: "#benevoles",
+    label: "Gestion des volontaires",
+    icon: Users,
     disabled: true,
   },
   {
-    href: "#bal-pourpre",
-    label: "Bal pourpre",
-    icon: VenetianMask,
+    href: "#feuille-de-temps",
+    label: "Feuille de temps",
+    icon: Clock,
     disabled: true,
   },
   {
-    href: "/editeur-carte",
-    label: "Éditeur de carte",
-    icon: MapPinned,
-    moduleKey: "editeur-carte",
-  },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: IdCard, pinned: true },
-  { href: "/parametres", label: "Paramètres", icon: Hammer, pinned: true },
-  {
-    href: "/mon-compte",
-    label: "Mon compte",
-    icon: ShieldUser,
-    noGate: true,
-    pinned: true,
-  },
-];
-
-export const CAMPAGNES_ITEMS: HubItem[] = [
-  { href: "/campagnes/marechaux", label: "Maréchaux", icon: PocketKnife },
-  {
-    href: "/campagnes/activites",
-    label: "Campagnes militaires",
-    icon: Swords,
-    moduleKey: "activites",
-  },
-  {
-    href: "/campagnes/documents",
-    label: "Gestion documentaire",
-    icon: Archive,
-    moduleKey: "documents",
+    href: "#grandes-batailles",
+    label: "Grandes Batailles",
+    icon: Shield,
+    disabled: true,
   },
 ];
 
@@ -94,6 +71,7 @@ export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
     label: "Combat",
     icon: Swords,
     noGate: true,
+    childItems: COMBAT_ITEMS,
   },
   {
     href: "/grande-bataille/tournois",
@@ -130,40 +108,70 @@ export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
   },
 ];
 
-export const COMBAT_ITEMS: HubItem[] = [
+export const CAMPAGNES_ITEMS: HubItem[] = [
+  { href: "/campagnes/marechaux", label: "Maréchaux", icon: PocketKnife },
   {
-    href: "/grande-bataille/combat/choses-a-faire",
-    label: "Choses à faire",
-    icon: ListChecks,
-    moduleKey: "grandes-batailles",
+    href: "/campagnes/activites",
+    label: "Campagnes militaires",
+    icon: Swords,
+    moduleKey: "activites",
   },
   {
-    href: "/grande-bataille/combat/escarmouches",
-    label: "Escarmouches",
-    icon: Axe,
+    href: "/campagnes/documents",
+    label: "Gestion documentaire",
+    icon: Archive,
+    moduleKey: "documents",
+  },
+];
+
+export const DASHBOARD_ITEMS: HubItem[] = [
+  {
+    href: "/campagnes",
+    label: "Campagnes",
+    icon: Swords,
+    noGate: true,
+    childItems: CAMPAGNES_ITEMS,
   },
   {
-    href: "/grande-bataille/combat/homologation",
-    label: "Homologation",
-    icon: BadgeCheck,
+    href: "/grande-bataille",
+    label: "Grande Bataille",
+    icon: BicollineIcon,
+    noGate: true,
+    childItems: GRANDE_BATAILLE_ITEMS,
   },
   {
-    href: "#benevoles",
-    label: "Gestion des volontaires",
-    icon: Users,
+    href: "/scenarios",
+    label: "Scénarios spéciaux",
+    icon: ScrollText,
+    moduleKey: "scenarios",
+  },
+  { href: "/jeu", label: "Jeu", icon: ChessKnight, moduleKey: "jeu" },
+  {
+    href: "#tournoi-des-nations",
+    label: "Tournoi des nations",
+    icon: Flag,
     disabled: true,
   },
   {
-    href: "#feuille-de-temps",
-    label: "Feuille de temps",
-    icon: Clock,
+    href: "#bal-pourpre",
+    label: "Bal pourpre",
+    icon: VenetianMask,
     disabled: true,
   },
   {
-    href: "#grandes-batailles",
-    label: "Grandes Batailles",
-    icon: Shield,
-    disabled: true,
+    href: "/editeur-carte",
+    label: "Éditeur de carte",
+    icon: MapPinned,
+    moduleKey: "editeur-carte",
+  },
+  { href: "/utilisateurs", label: "Utilisateurs", icon: IdCard, pinned: true },
+  { href: "/parametres", label: "Paramètres", icon: Hammer, pinned: true },
+  {
+    href: "/mon-compte",
+    label: "Mon compte",
+    icon: ShieldUser,
+    noGate: true,
+    pinned: true,
   },
 ];
 

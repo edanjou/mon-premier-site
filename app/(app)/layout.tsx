@@ -22,7 +22,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { moduleKeyFor, type HubItem } from "@/components/module-hub";
+import { isItemAllowed, type HubItem } from "@/components/module-hub";
 import {
   getModuleAccessLevels,
   type ModuleAccessLevel,
@@ -173,22 +173,19 @@ export default function DashboardLayout({
   const suppressClickRef = useRef(false);
 
   const { items: contextItems, orderColumn } = hubContextFor(pathname);
-
-  const isAllowed = (item: HubItem) => {
-    if (item.noGate) return true;
-    if (profile?.role === "admin") return true;
-    return (levels[moduleKeyFor(item)] ?? "none") !== "none";
-  };
+  const isAdmin = profile?.role === "admin";
 
   const disabledItems = contextItems.filter((item) => item.disabled);
   const moduleItems = orderItems(
     contextItems.filter(
-      (item) => !item.disabled && !item.pinned && isAllowed(item),
+      (item) =>
+        !item.disabled && !item.pinned && isItemAllowed(item, levels, isAdmin),
     ),
     profile?.[orderColumn] ?? null,
   );
   const pinnedItems = contextItems.filter(
-    (item) => item.pinned && !item.disabled && isAllowed(item),
+    (item) =>
+      item.pinned && !item.disabled && isItemAllowed(item, levels, isAdmin),
   );
 
   const sensors = useSensors(

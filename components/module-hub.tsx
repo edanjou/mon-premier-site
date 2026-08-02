@@ -33,9 +33,13 @@ export type HubItem = {
   moduleKey?: string;
   disabled?: boolean;
   /** Pure navigation link to another hub (family/subsection card) — not tied
-   * to a single permission module, so it's never permission-filtered. Access
-   * control happens at the leaf modules reachable from it. */
+   * to a single permission module, so it's never permission-filtered on its
+   * own. If `childItems` is set, visibility instead depends on whether the
+   * user can access at least one of them (recursively). With no
+   * `childItems`, it's always visible (e.g. "Mon compte"). */
   noGate?: boolean;
+  /** The hub this item links to, for computing noGate visibility. */
+  childItems?: HubItem[];
   /** Always rendered last, in the order given — excluded from drag reordering. */
   pinned?: boolean;
 };
@@ -50,6 +54,21 @@ export function moduleKeyFor(item: HubItem): string {
   if (item.moduleKey) return item.moduleKey;
   const segments = item.href.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? item.href;
+}
+
+export function isItemAllowed(
+  item: HubItem,
+  levels: Record<string, "none" | "gestionnaire" | "scenariste">,
+  isAdmin: boolean,
+): boolean {
+  if (item.childItems) {
+    return item.childItems.some(
+      (child) => !child.disabled && isItemAllowed(child, levels, isAdmin),
+    );
+  }
+  if (item.noGate) return true;
+  if (isAdmin) return true;
+  return (levels[moduleKeyFor(item)] ?? "none") !== "none";
 }
 
 function SortableHubCard({
@@ -171,17 +190,17 @@ export default function ModuleHub({
     getOwnProfile().then(async (p) => {
       setProfile(p);
       const levels = p ? await getModuleAccessLevels(p) : {};
-      const isAllowed = (item: HubItem) => {
-        if (item.noGate) return true;
-        if (p?.role === "admin") return true;
-        return (levels[moduleKeyFor(item)] ?? "none") !== "none";
-      };
+      const isAdmin = p?.role === "admin";
       const available = items.filter(
-        (item) => !item.disabled && !item.pinned && isAllowed(item),
+        (item) =>
+          !item.disabled && !item.pinned && isItemAllowed(item, levels, isAdmin),
       );
       setActiveItems(orderItems(available, p?.[orderColumn] ?? null));
       setPinnedItems(
-        items.filter((item) => item.pinned && !item.disabled && isAllowed(item)),
+        items.filter(
+          (item) =>
+            item.pinned && !item.disabled && isItemAllowed(item, levels, isAdmin),
+        ),
       );
       setIsLoading(false);
     });
