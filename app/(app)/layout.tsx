@@ -17,57 +17,25 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  Axe,
-  BadgeCheck,
-  Castle,
-  ChessKnight,
-  Hammer,
-  LogOut,
-  MapPinned,
-  PocketKnife,
-  ScrollText,
-  Shield,
-  ShieldUser,
-  Swords,
-} from "lucide-react";
+import { Castle, LogOut } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import KingIcon from "@/components/king-icon";
-import { getModuleAccessLevels } from "@/lib/features";
+import { moduleKeyFor, type HubItem } from "@/components/module-hub";
+import {
+  getModuleAccessLevels,
+  type ModuleAccessLevel,
+} from "@/lib/features";
+import { hubContextFor } from "@/lib/hub-items";
 import { orderItems } from "@/lib/order-items";
-import { getOwnProfile } from "@/lib/profile";
+import { getOwnProfile, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 
 type IconComponent = React.ComponentType<{
   size?: number;
   className?: string;
 }>;
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: IconComponent;
-};
-
-const ALL_MODULE_ITEMS: NavItem[] = [
-  { href: "/editeur-carte", label: "Éditeur de carte", icon: MapPinned },
-  { href: "/activites", label: "Campagnes", icon: Swords },
-  { href: "/grandes-batailles", label: "Grandes Batailles", icon: Shield },
-  { href: "/escarmouches", label: "Escarmouches", icon: Axe },
-  { href: "/scenarios", label: "Scénarios", icon: ScrollText },
-  { href: "/jeu", label: "Jeu", icon: ChessKnight },
-  { href: "/homologation", label: "Homologation", icon: BadgeCheck },
-  { href: "/marechaux", label: "Maréchaux", icon: PocketKnife },
-  { href: "/utilisateurs", label: "Utilisateurs", icon: KingIcon },
-];
-
-const BOTTOM_NAV_ITEMS = [
-  { href: "/parametres", label: "Paramètres", icon: Hammer },
-  { href: "/mon-compte", label: "Mon compte", icon: ShieldUser },
-];
 
 function SidebarItem({
   href,
@@ -124,12 +92,27 @@ function SidebarItem({
   );
 }
 
+function DisabledSidebarItem({ item }: { item: HubItem }) {
+  const Icon = item.icon;
+  return (
+    <div
+      className="group relative flex h-11 w-11 items-center justify-center rounded-full text-foreground/25"
+      aria-label={`${item.label} (Bientôt)`}
+    >
+      <Icon size={20} className="flex-shrink-0" />
+      <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
+        {item.label} (Bientôt)
+      </span>
+    </div>
+  );
+}
+
 function SortableSidebarItem({
   item,
   active,
   suppressClickRef,
 }: {
-  item: NavItem;
+  item: HubItem;
   active: boolean;
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
@@ -185,10 +168,28 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [isChecking, setIsChecking] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [moduleItems, setModuleItems] = useState<NavItem[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [levels, setLevels] = useState<Record<string, ModuleAccessLevel>>({});
   const suppressClickRef = useRef(false);
+
+  const { items: contextItems, orderColumn } = hubContextFor(pathname);
+
+  const isAllowed = (item: HubItem) => {
+    if (item.noGate) return true;
+    if (profile?.role === "admin") return true;
+    return (levels[moduleKeyFor(item)] ?? "none") !== "none";
+  };
+
+  const disabledItems = contextItems.filter((item) => item.disabled);
+  const moduleItems = orderItems(
+    contextItems.filter(
+      (item) => !item.disabled && !item.pinned && isAllowed(item),
+    ),
+    profile?.[orderColumn] ?? null,
+  );
+  const pinnedItems = contextItems.filter(
+    (item) => item.pinned && !item.disabled && isAllowed(item),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -215,17 +216,9 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (isChecking) return;
-    getOwnProfile().then(async (profile) => {
-      setUserId(profile?.id ?? null);
-      setIsAdmin(profile?.role === "admin");
-      const levels = profile ? await getModuleAccessLevels(profile) : {};
-      const available = ALL_MODULE_ITEMS.filter((item) => {
-        if (item.href === "/utilisateurs") return profile?.role === "admin";
-        if (profile?.role === "admin") return true;
-        const moduleKey = item.href.slice(1);
-        return (levels[moduleKey] ?? "none") !== "none";
-      });
-      setModuleItems(orderItems(available, profile?.sidebar_order ?? null));
+    getOwnProfile().then(async (p) => {
+      setProfile(p);
+      setLevels(p ? await getModuleAccessLevels(p) : {});
     });
   }, [isChecking]);
 
@@ -242,22 +235,19 @@ export default function DashboardLayout({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     releaseClickSuppression();
-    if (!over || active.id === over.id) return;
+    if (!over || active.id === over.id || !profile) return;
 
-    setModuleItems((prev) => {
-      const fromIndex = prev.findIndex((item) => item.href === active.id);
-      const toIndex = prev.findIndex((item) => item.href === over.id);
-      if (fromIndex === -1 || toIndex === -1) return prev;
-      const next = arrayMove(prev, fromIndex, toIndex);
-      if (userId) {
-        supabase
-          .from("profiles")
-          .update({ sidebar_order: next.map((item) => item.href) })
-          .eq("id", userId)
-          .then();
-      }
-      return next;
-    });
+    const fromIndex = moduleItems.findIndex((item) => item.href === active.id);
+    const toIndex = moduleItems.findIndex((item) => item.href === over.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const next = arrayMove(moduleItems, fromIndex, toIndex);
+    const nextHrefs = next.map((item) => item.href);
+    setProfile({ ...profile, [orderColumn]: nextHrefs });
+    supabase
+      .from("profiles")
+      .update({ [orderColumn]: nextHrefs })
+      .eq("id", profile.id)
+      .then();
   };
 
   const handleSignOut = async () => {
@@ -315,12 +305,10 @@ export default function DashboardLayout({
                 ))}
               </SortableContext>
             </DndContext>
-          </div>
-
-          <div className="mt-auto flex w-full flex-col items-center gap-2">
-            {BOTTOM_NAV_ITEMS.filter(
-              (item) => item.href !== "/parametres" || isAdmin,
-            ).map((item) => (
+            {disabledItems.map((item) => (
+              <DisabledSidebarItem key={item.href} item={item} />
+            ))}
+            {pinnedItems.map((item) => (
               <SidebarItem
                 key={item.href}
                 href={item.href}
@@ -329,6 +317,9 @@ export default function DashboardLayout({
                 active={pathname === item.href}
               />
             ))}
+          </div>
+
+          <div className="mt-auto flex w-full flex-col items-center gap-2">
             <SidebarItem
               label="Se déconnecter"
               icon={LogOut}
@@ -337,7 +328,12 @@ export default function DashboardLayout({
           </div>
         </aside>
 
-        <main className="flex-1 overflow-y-auto px-8 py-6">{children}</main>
+        <main className="flex flex-1 flex-col overflow-y-auto px-8 py-6">
+          <div className="flex-1">{children}</div>
+          <footer className="mt-8 text-right text-xs text-foreground/40">
+            Outil développé par Eric D&apos;Anjou
+          </footer>
+        </main>
       </div>
     </div>
   );

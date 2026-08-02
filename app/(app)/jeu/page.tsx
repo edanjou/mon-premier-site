@@ -3,6 +3,7 @@
 import { Hourglass, Search, Stamp, User, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
 import { searchCharacters, type Character } from "@/lib/characters";
@@ -638,6 +639,7 @@ function JeuContent() {
   return (
     <div>
       <h1 className={`${glofters.className} text-3xl text-foreground`}>Jeu</h1>
+      <Breadcrumb />
 
       {tab === "sabliers" && sablierSummary && (
         <div className="mt-6">

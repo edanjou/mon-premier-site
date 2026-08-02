@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import Breadcrumb from "@/components/breadcrumb";
 import { supabase } from "@/lib/supabase";
 
 export default function MonComptePage() {
@@ -10,6 +11,7 @@ export default function MonComptePage() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [title, setTitle] = useState("");
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -32,12 +34,13 @@ export default function MonComptePage() {
       if (!data.user) return;
       supabase
         .from("profiles")
-        .select("first_name, last_name")
+        .select("first_name, last_name, title")
         .eq("id", data.user.id)
         .single()
         .then(({ data: profile }) => {
           setFirstName(profile?.first_name ?? "");
           setLastName(profile?.last_name ?? "");
+          setTitle(profile?.title ?? "");
         });
     });
   }, []);
@@ -50,7 +53,11 @@ export default function MonComptePage() {
     setIsProfileLoading(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ first_name: firstName, last_name: lastName })
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        title: title || null,
+      })
       .eq("id", user.id);
     setIsProfileLoading(false);
     if (error) {
@@ -107,6 +114,7 @@ export default function MonComptePage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Mon compte
       </h1>
+      <Breadcrumb />
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <form
@@ -126,6 +134,13 @@ export default function MonComptePage() {
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             placeholder="Nom"
+            className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+          />
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Titre (ex. Maréchal en chef)"
             className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
           />
           {profileError && (

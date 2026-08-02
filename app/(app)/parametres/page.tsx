@@ -3,6 +3,7 @@
 import { Feather, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import Breadcrumb from "@/components/breadcrumb";
 import {
   getCharacterLastSyncedAt,
   getGuildLastSyncedAt,
@@ -719,6 +720,7 @@ export default function ParametresPage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Paramètres
       </h1>
+      <Breadcrumb />
 
       {isAdmin ? (
         <div className="mt-8 flex flex-col gap-6">

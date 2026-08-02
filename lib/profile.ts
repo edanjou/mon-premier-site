@@ -6,9 +6,13 @@ export type Profile = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  title: string | null;
   role: Role;
   dashboard_order: string[] | null;
   sidebar_order: string[] | null;
+  campagnes_order: string[] | null;
+  grande_bataille_order: string[] | null;
+  combat_order: string[] | null;
 };
 
 export async function getOwnProfile(): Promise<Profile | null> {
@@ -17,7 +21,9 @@ export async function getOwnProfile(): Promise<Profile | null> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, first_name, last_name, role, dashboard_order, sidebar_order")
+    .select(
+      "id, first_name, last_name, title, role, dashboard_order, sidebar_order, campagnes_order, grande_bataille_order, combat_order",
+    )
     .eq("id", userData.user.id)
     .single();
 

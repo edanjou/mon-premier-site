@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const { data: profiles } = await admin
     .from("profiles")
-    .select("id, first_name, last_name, role");
+    .select("id, first_name, last_name, title, role");
 
   const { data: permissions } = await admin
     .from("permissions")
@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       created_at: u.created_at,
       first_name: profile?.first_name ?? null,
       last_name: profile?.last_name ?? null,
+      title: profile?.title ?? null,
       role: profile?.role ?? "user",
       permissions: userPermissions,
     };

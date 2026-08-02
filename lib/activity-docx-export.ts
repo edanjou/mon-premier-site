@@ -238,7 +238,6 @@ function scheduleTable(rows: ScheduleRow[]): Table[] {
                 textCell(row.endTime || "—", endWidth),
                 textCell(
                   row.label +
-                    (row.isChapter ? " (Chapitre)" : "") +
                     (row.hasConflict ? " ⚠ Conflit d'horaire" : ""),
                   labelWidth,
                 ),

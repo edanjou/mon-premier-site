@@ -15,10 +15,10 @@ export const MODULES: ModuleDefinition[] = [
     label: "Éditeur de carte",
     hasScenaristeTier: false,
   },
-  { key: "activites", label: "Campagnes", hasScenaristeTier: true },
+  { key: "activites", label: "Campagnes militaires", hasScenaristeTier: true },
   {
     key: "grandes-batailles",
-    label: "Grandes Batailles",
+    label: "Choses à faire",
     hasScenaristeTier: true,
   },
   { key: "escarmouches", label: "Escarmouches", hasScenaristeTier: true },
@@ -26,7 +26,63 @@ export const MODULES: ModuleDefinition[] = [
   { key: "jeu", label: "Jeu", hasScenaristeTier: false },
   { key: "homologation", label: "Homologation", hasScenaristeTier: false },
   { key: "marechaux", label: "Maréchaux", hasScenaristeTier: false },
+  { key: "tournois", label: "Tournois", hasScenaristeTier: true },
+  {
+    key: "documents",
+    label: "Gestion documentaire",
+    hasScenaristeTier: false,
+  },
 ];
+
+function moduleByKey(key: string): ModuleDefinition {
+  const mod = MODULES.find((m) => m.key === key);
+  if (!mod) throw new Error(`Unknown module key: ${key}`);
+  return mod;
+}
+
+export type PermissionTreeNode =
+  | { type: "leaf"; module: ModuleDefinition }
+  | { type: "group"; label: string; children: PermissionTreeNode[] };
+
+// Mirrors the navigation hierarchy in lib/hub-items.ts (families → sub-sections →
+// modules), but only includes nodes with a real page behind them — placeholder
+// "Bientôt" sections have no permission to grant yet.
+export const PERMISSION_TREE: PermissionTreeNode[] = [
+  { type: "leaf", module: moduleByKey("editeur-carte") },
+  {
+    type: "group",
+    label: "Campagnes",
+    children: [
+      { type: "leaf", module: moduleByKey("marechaux") },
+      { type: "leaf", module: moduleByKey("activites") },
+      { type: "leaf", module: moduleByKey("documents") },
+    ],
+  },
+  {
+    type: "group",
+    label: "Grande Bataille",
+    children: [
+      { type: "leaf", module: moduleByKey("tournois") },
+      {
+        type: "group",
+        label: "Combat",
+        children: [
+          { type: "leaf", module: moduleByKey("grandes-batailles") },
+          { type: "leaf", module: moduleByKey("escarmouches") },
+          { type: "leaf", module: moduleByKey("homologation") },
+        ],
+      },
+    ],
+  },
+  { type: "leaf", module: moduleByKey("scenarios") },
+  { type: "leaf", module: moduleByKey("jeu") },
+];
+
+export function collectModules(node: PermissionTreeNode): ModuleDefinition[] {
+  return node.type === "leaf"
+    ? [node.module]
+    : node.children.flatMap(collectModules);
+}
 
 export function scenaristeKey(moduleKey: string): string {
   return `${moduleKey}-scenariste`;

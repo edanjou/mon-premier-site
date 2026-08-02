@@ -1,18 +1,6 @@
 import type { Battlefield } from "@/lib/battlefields";
 import { supabase } from "@/lib/supabase";
 
-export const CHAPTER_DURATION_OPTIONS = [
-  "30 minutes",
-  "1 heure",
-  "1 heure 30",
-  "2 heures",
-  "2 heures 30",
-  "3 heures",
-  "3 heures 30",
-  "4 heures",
-  "Toute la journée",
-] as const;
-
 export const CHAPTER_HEALING_MODES = ["Sabliers", "Puits de guérison"] as const;
 
 export type ChapterObjective = {

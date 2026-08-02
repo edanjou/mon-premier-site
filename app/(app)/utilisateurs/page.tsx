@@ -1,16 +1,19 @@
 "use client";
 
-import { Feather, Plus, Trash2 } from "lucide-react";
+import { Feather, KeyRound, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
 import {
-  MODULES,
+  collectModules,
   moduleAccessLevel,
+  PERMISSION_TREE,
   scenaristeKey,
   type ModuleAccessLevel,
   type ModuleDefinition,
+  type PermissionTreeNode,
 } from "@/lib/features";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
@@ -21,6 +24,7 @@ type AdminUser = {
   created_at: string;
   first_name: string | null;
   last_name: string | null;
+  title: string | null;
   role: "admin" | "user";
   permissions: { feature: string; granted: boolean }[];
 };
@@ -150,10 +154,11 @@ function EditUserModal({
 }: {
   user: AdminUser;
   onClose: () => void;
-  onSaved: (firstName: string, lastName: string) => void;
+  onSaved: (firstName: string, lastName: string, title: string) => void;
 }) {
   const [firstName, setFirstName] = useState(user.first_name ?? "");
   const [lastName, setLastName] = useState(user.last_name ?? "");
+  const [title, setTitle] = useState(user.title ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,14 +168,18 @@ function EditUserModal({
     setIsSaving(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ first_name: firstName, last_name: lastName })
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        title: title || null,
+      })
       .eq("id", user.id);
     setIsSaving(false);
     if (error) {
       setError("Échec de la mise à jour.");
       return;
     }
-    onSaved(firstName, lastName);
+    onSaved(firstName, lastName, title);
     onClose();
   };
 
@@ -199,6 +208,13 @@ function EditUserModal({
           placeholder="Nom"
           className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
         />
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Titre (ex. Maréchal en chef)"
+          className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
@@ -223,6 +239,178 @@ function EditUserModal({
   );
 }
 
+function PermissionTreeRow({
+  node,
+  depth,
+  granted,
+  isAdmin,
+  onSetLevel,
+}: {
+  node: PermissionTreeNode;
+  depth: number;
+  granted: Set<string>;
+  isAdmin: boolean;
+  onSetLevel: (mod: ModuleDefinition, level: ModuleAccessLevel) => void;
+}) {
+  const indent = { paddingLeft: `${depth * 20}px` };
+
+  if (node.type === "leaf") {
+    const mod = node.module;
+    if (!mod.hasScenaristeTier) {
+      const isGranted = isAdmin || granted.has(mod.key);
+      return (
+        <label
+          style={indent}
+          className="flex items-center gap-2 py-1.5 text-sm text-foreground"
+        >
+          <input
+            type="checkbox"
+            checked={isGranted}
+            disabled={isAdmin}
+            onChange={(e) =>
+              onSetLevel(mod, e.target.checked ? "gestionnaire" : "none")
+            }
+            className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
+          />
+          {mod.label}
+        </label>
+      );
+    }
+    const level = isAdmin ? "gestionnaire" : moduleAccessLevel(mod, granted);
+    return (
+      <div
+        style={indent}
+        className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground"
+      >
+        <span>{mod.label}</span>
+        <select
+          value={level}
+          disabled={isAdmin}
+          onChange={(e) =>
+            onSetLevel(mod, e.target.value as ModuleAccessLevel)
+          }
+          className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
+        >
+          <option value="none">Aucun accès</option>
+          <option value="gestionnaire">Gestionnaire</option>
+          <option value="scenariste">Scénariste</option>
+        </select>
+      </div>
+    );
+  }
+
+  const mods = collectModules(node);
+  const grantedCount = isAdmin
+    ? mods.length
+    : mods.filter((m) => moduleAccessLevel(m, granted) === "gestionnaire")
+        .length;
+  const allGranted = grantedCount === mods.length;
+  const noneGranted = grantedCount === 0;
+
+  return (
+    <div>
+      <label
+        style={indent}
+        className="flex items-center gap-2 py-1.5 text-sm font-semibold text-foreground"
+      >
+        <input
+          type="checkbox"
+          checked={allGranted}
+          disabled={isAdmin}
+          ref={(el) => {
+            if (el) el.indeterminate = !allGranted && !noneGranted;
+          }}
+          onChange={(e) =>
+            mods.forEach((mod) =>
+              onSetLevel(mod, e.target.checked ? "gestionnaire" : "none"),
+            )
+          }
+          className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
+        />
+        {node.label}
+      </label>
+      {node.children.map((child, index) => (
+        <PermissionTreeRow
+          key={index}
+          node={child}
+          depth={depth + 1}
+          granted={granted}
+          isAdmin={isAdmin}
+          onSetLevel={onSetLevel}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PermissionsModal({
+  user,
+  onClose,
+  onSetLevel,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onSetLevel: (mod: ModuleDefinition, level: ModuleAccessLevel) => void;
+}) {
+  const granted = new Set(
+    user.permissions.filter((p) => p.granted).map((p) => p.feature),
+  );
+  const isAdmin = user.role === "admin";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">
+            Accès — {user.email}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {isAdmin && (
+          <p className="text-xs text-foreground/50">
+            Cet utilisateur est admin : accès complet à tout, non modifiable
+            ici.
+          </p>
+        )}
+        <div className="flex flex-col divide-y divide-black/[.06] dark:divide-white/[.06]">
+          {PERMISSION_TREE.map((node, index) => (
+            <PermissionTreeRow
+              key={index}
+              node={node}
+              depth={0}
+              granted={granted}
+              isAdmin={isAdmin}
+              onSetLevel={onSetLevel}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UtilisateursPage() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
@@ -232,6 +420,9 @@ export default function UtilisateursPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [permissionsUserId, setPermissionsUserId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     getOwnProfile().then((profile) => {
@@ -274,31 +465,6 @@ export default function UtilisateursPage() {
   const handleRoleChange = async (userId: string, role: "admin" | "user") => {
     await supabase.from("profiles").update({ role }).eq("id", userId);
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role } : u)));
-  };
-
-  const handleTogglePermission = async (
-    userId: string,
-    feature: string,
-    granted: boolean,
-  ) => {
-    await supabase
-      .from("permissions")
-      .upsert(
-        { user_id: userId, feature, granted },
-        { onConflict: "user_id,feature" },
-      );
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== userId) return u;
-        const existing = u.permissions.find((p) => p.feature === feature);
-        const nextPermissions = existing
-          ? u.permissions.map((p) =>
-              p.feature === feature ? { ...p, granted } : p,
-            )
-          : [...u.permissions, { feature, granted }];
-        return { ...u, permissions: nextPermissions };
-      }),
-    );
   };
 
   const handleSetModuleLevel = async (
@@ -362,6 +528,8 @@ export default function UtilisateursPage() {
   };
 
   const { page, pageCount, setPage, pageItems } = usePagination(users);
+  const permissionsUser =
+    users.find((u) => u.id === permissionsUserId) ?? null;
 
   if (isChecking) {
     return (
@@ -376,6 +544,7 @@ export default function UtilisateursPage() {
       <h1 className={`${glofters.className} text-3xl text-foreground`}>
         Utilisateurs
       </h1>
+      <Breadcrumb />
 
       <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
         <div className="mb-4 flex items-center justify-between">
@@ -398,17 +567,13 @@ export default function UtilisateursPage() {
 
         {!isLoadingUsers && !listError && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[600px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
                   <th className="py-2 pr-4 font-medium">Nom</th>
                   <th className="py-2 pr-4 font-medium">Email</th>
                   <th className="py-2 pr-4 font-medium">Rôle</th>
-                  {MODULES.map((mod) => (
-                    <th key={mod.key} className="py-2 pr-4 font-medium">
-                      {mod.label}
-                    </th>
-                  ))}
+                  <th className="py-2 pr-4 font-medium">Accès</th>
                   <th className="py-2 pr-4 font-medium">Actions</th>
                 </tr>
               </thead>
@@ -441,59 +606,16 @@ export default function UtilisateursPage() {
                         <option value="admin">Admin</option>
                       </select>
                     </td>
-                    {MODULES.map((mod) => {
-                      if (!mod.hasScenaristeTier) {
-                        const granted =
-                          user.permissions.find((p) => p.feature === mod.key)
-                            ?.granted ?? false;
-                        return (
-                          <td key={mod.key} className="py-2 pr-4">
-                            <input
-                              type="checkbox"
-                              checked={user.role === "admin" || granted}
-                              disabled={user.role === "admin"}
-                              onChange={(e) =>
-                                handleTogglePermission(
-                                  user.id,
-                                  mod.key,
-                                  e.target.checked,
-                                )
-                              }
-                              className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
-                            />
-                          </td>
-                        );
-                      }
-                      const granted = new Set(
-                        user.permissions
-                          .filter((p) => p.granted)
-                          .map((p) => p.feature),
-                      );
-                      const level =
-                        user.role === "admin"
-                          ? "gestionnaire"
-                          : moduleAccessLevel(mod, granted);
-                      return (
-                        <td key={mod.key} className="py-2 pr-4">
-                          <select
-                            value={level}
-                            disabled={user.role === "admin"}
-                            onChange={(e) =>
-                              handleSetModuleLevel(
-                                user.id,
-                                mod,
-                                e.target.value as ModuleAccessLevel,
-                              )
-                            }
-                            className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
-                          >
-                            <option value="none">Aucun accès</option>
-                            <option value="gestionnaire">Gestionnaire</option>
-                            <option value="scenariste">Scénariste</option>
-                          </select>
-                        </td>
-                      );
-                    })}
+                    <td className="py-2 pr-4">
+                      <button
+                        type="button"
+                        onClick={() => setPermissionsUserId(user.id)}
+                        className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                      >
+                        <KeyRound size={14} />
+                        {user.role === "admin" ? "Accès complet" : "Gérer"}
+                      </button>
+                    </td>
                     <td className="py-2 pr-4">
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -537,15 +659,25 @@ export default function UtilisateursPage() {
         <EditUserModal
           user={editingUser}
           onClose={() => setEditingUser(null)}
-          onSaved={(firstName, lastName) => {
+          onSaved={(firstName, lastName, title) => {
             setUsers((prev) =>
               prev.map((u) =>
                 u.id === editingUser.id
-                  ? { ...u, first_name: firstName, last_name: lastName }
+                  ? { ...u, first_name: firstName, last_name: lastName, title }
                   : u,
               ),
             );
           }}
+        />
+      )}
+
+      {permissionsUser && (
+        <PermissionsModal
+          user={permissionsUser}
+          onClose={() => setPermissionsUserId(null)}
+          onSetLevel={(mod, level) =>
+            handleSetModuleLevel(permissionsUser.id, mod, level)
+          }
         />
       )}
     </div>
