@@ -1,3 +1,4 @@
+import { anthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
   try {
     const { text: result } = await generateText({
-      model: "anthropic/claude-haiku-4.5",
+      model: anthropic("claude-haiku-4-5-20251001"),
       system: SYSTEM_PROMPT,
       prompt: text,
     });
