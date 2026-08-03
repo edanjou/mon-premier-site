@@ -23,6 +23,7 @@ import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
+import { getModuleAccessLevels } from "@/lib/features";
 import {
   createHomologationSchedule,
   deleteHomologationSchedule,
@@ -33,6 +34,7 @@ import {
   type HomologationSchedule,
   type HomologationSlot,
 } from "@/lib/homologation";
+import { getOwnProfile } from "@/lib/profile";
 import { listQuartiers, type Quartier } from "@/lib/quartiers";
 
 function formatScheduleDate(dateStr: string): string {
@@ -138,11 +140,13 @@ type SlotFormRow = HomologationSlot & { key: string };
 function SortableSlotRow({
   row,
   quartiers,
+  canWrite,
   onUpdate,
   onRemove,
 }: {
   row: SlotFormRow;
   quartiers: Quartier[];
+  canWrite: boolean;
   onUpdate: (
     key: string,
     field: "quartier_id" | "start_time" | "end_time",
@@ -157,7 +161,7 @@ function SortableSlotRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: row.key });
+  } = useSortable({ id: row.key, disabled: !canWrite });
 
   return (
     <tr
@@ -168,21 +172,24 @@ function SortableSlotRow({
       }`}
     >
       <td className="px-3 py-2">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          aria-label="Déplacer"
-          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
-        >
-          <GripVertical size={14} />
-        </button>
+        {canWrite && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Déplacer"
+            className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+          >
+            <GripVertical size={14} />
+          </button>
+        )}
       </td>
       <td className="px-3 py-2">
         <select
           value={row.quartier_id}
           onChange={(e) => onUpdate(row.key, "quartier_id", e.target.value)}
-          className={`w-full ${slotFieldClassName}`}
+          disabled={!canWrite}
+          className={`w-full ${slotFieldClassName} disabled:opacity-60`}
         >
           <option value="">Choisir un quartier…</option>
           {quartiers.map((q) => (
@@ -197,7 +204,8 @@ function SortableSlotRow({
           type="time"
           value={row.start_time ?? ""}
           onChange={(e) => onUpdate(row.key, "start_time", e.target.value)}
-          className={slotFieldClassName}
+          disabled={!canWrite}
+          className={`${slotFieldClassName} disabled:opacity-60`}
         />
       </td>
       <td className="px-3 py-2">
@@ -205,18 +213,21 @@ function SortableSlotRow({
           type="time"
           value={row.end_time ?? ""}
           onChange={(e) => onUpdate(row.key, "end_time", e.target.value)}
-          className={slotFieldClassName}
+          disabled={!canWrite}
+          className={`${slotFieldClassName} disabled:opacity-60`}
         />
       </td>
       <td className="px-3 py-2 text-right">
-        <button
-          type="button"
-          onClick={() => onRemove(row.key)}
-          aria-label="Retirer"
-          className="text-foreground/50 hover:text-foreground"
-        >
-          <X size={14} />
-        </button>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={() => onRemove(row.key)}
+            aria-label="Retirer"
+            className="text-foreground/50 hover:text-foreground"
+          >
+            <X size={14} />
+          </button>
+        )}
       </td>
     </tr>
   );
@@ -224,9 +235,11 @@ function SortableSlotRow({
 
 function SlotsModal({
   schedule,
+  canWrite,
   onClose,
 }: {
   schedule: HomologationSchedule;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [quartiers, setQuartiers] = useState<Quartier[]>([]);
@@ -245,6 +258,7 @@ function SlotsModal({
   }, [schedule.id]);
 
   const addRow = () => {
+    if (!canWrite) return;
     setRows((prev) => [
       ...prev,
       {
@@ -263,12 +277,14 @@ function SlotsModal({
     field: "quartier_id" | "start_time" | "end_time",
     value: string,
   ) => {
+    if (!canWrite) return;
     setRows((prev) =>
       prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)),
     );
   };
 
   const removeRow = (key: string) => {
+    if (!canWrite) return;
     setRows((prev) => prev.filter((r) => r.key !== key));
   };
 
@@ -280,6 +296,7 @@ function SlotsModal({
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setRows((prev) => {
@@ -291,6 +308,7 @@ function SlotsModal({
   };
 
   const handleSave = async () => {
+    if (!canWrite) return;
     setError(null);
     if (rows.some((r) => !r.quartier_id)) {
       setError("Choisis un quartier pour chaque créneau.");
@@ -373,6 +391,7 @@ function SlotsModal({
                           key={row.key}
                           row={row}
                           quartiers={quartiers}
+                          canWrite={canWrite}
                           onUpdate={updateRow}
                           onRemove={removeRow}
                         />
@@ -388,14 +407,16 @@ function SlotsModal({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={addRow}
-              className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            >
-              <Plus size={14} />
-              Ajouter un créneau
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={addRow}
+                className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+              >
+                <Plus size={14} />
+                Ajouter un créneau
+              </button>
+            )}
           </>
         )}
 
@@ -411,14 +432,16 @@ function SlotsModal({
           >
             Fermer
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "…" : "Enregistrer"}
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "…" : "Enregistrer"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -434,6 +457,16 @@ function HomologationContent() {
     useState<HomologationSchedule | null>(null);
   const [slotsSchedule, setSlotsSchedule] =
     useState<HomologationSchedule | null>(null);
+  const [canWrite, setCanWrite] = useState(true);
+
+  useEffect(() => {
+    getOwnProfile().then((profile) => {
+      if (!profile) return;
+      getModuleAccessLevels(profile).then((levels) => {
+        setCanWrite(levels["homologation"] === "ecriture");
+      });
+    });
+  }, []);
 
   const fetchSchedules = async () => {
     setIsLoading(true);
@@ -453,6 +486,7 @@ function HomologationContent() {
   }, []);
 
   const handleDelete = async (schedule: HomologationSchedule) => {
+    if (!canWrite) return;
     if (!window.confirm(`Supprimer l'horaire "${schedule.name}" ?`)) return;
     try {
       await deleteHomologationSchedule(schedule.id);
@@ -476,13 +510,15 @@ function HomologationContent() {
           <h2 className="font-semibold text-foreground">
             Horaires d&apos;homologation mobile
           </h2>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
-          >
-            <Plus size={16} />
-            Créer un horaire
-          </button>
+          {canWrite && (
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
+            >
+              <Plus size={16} />
+              Créer un horaire
+            </button>
+          )}
         </div>
 
         {isLoading && (
@@ -531,22 +567,24 @@ function HomologationContent() {
                             Horaire
                           </button>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setEditingSchedule(schedule)}
-                            aria-label="Modifier"
-                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                          >
-                            <Feather size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(schedule)}
-                            aria-label="Supprimer"
-                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {canWrite && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingSchedule(schedule)}
+                              aria-label="Modifier"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Feather size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(schedule)}
+                              aria-label="Supprimer"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -574,6 +612,7 @@ function HomologationContent() {
       {slotsSchedule && (
         <SlotsModal
           schedule={slotsSchedule}
+          canWrite={canWrite}
           onClose={() => setSlotsSchedule(null)}
         />
       )}

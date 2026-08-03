@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/sync-guilds",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-characters",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-religion-members",
+      "schedule": "0 8 * * *"
     }
   ]
 }

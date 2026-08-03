@@ -1,10 +1,25 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import { Check, X as XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import { supabase } from "@/lib/supabase";
+
+const PASSWORD_RULES: { label: string; test: (pw: string) => boolean }[] = [
+  { label: "Au moins 8 caractères", test: (pw) => pw.length >= 8 },
+  { label: "Une majuscule", test: (pw) => /[A-Z]/.test(pw) },
+  { label: "Une minuscule", test: (pw) => /[a-z]/.test(pw) },
+  { label: "Un chiffre", test: (pw) => /[0-9]/.test(pw) },
+  { label: "Un caractère spécial", test: (pw) => /[^A-Za-z0-9]/.test(pw) },
+];
+
+function passwordFailures(pw: string): string[] {
+  return PASSWORD_RULES.filter((rule) => !rule.test(pw)).map(
+    (rule) => rule.label,
+  );
+}
 
 export default function MonComptePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -92,8 +107,11 @@ export default function MonComptePage() {
       setPasswordError("Les mots de passe ne correspondent pas.");
       return;
     }
-    if (password.length < 6) {
-      setPasswordError("Le mot de passe doit contenir au moins 6 caractères.");
+    const failures = passwordFailures(password);
+    if (failures.length > 0) {
+      setPasswordError(
+        `Le mot de passe doit contenir : ${failures.join(", ").toLowerCase()}.`,
+      );
       return;
     }
 
@@ -207,6 +225,26 @@ export default function MonComptePage() {
             placeholder="Nouveau mot de passe"
             className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
           />
+          {password && (
+            <ul className="flex flex-col gap-1">
+              {PASSWORD_RULES.map((rule) => {
+                const isMet = rule.test(password);
+                return (
+                  <li
+                    key={rule.label}
+                    className={`flex items-center gap-1.5 text-xs ${
+                      isMet
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-foreground/50"
+                    }`}
+                  >
+                    {isMet ? <Check size={12} /> : <XIcon size={12} />}
+                    {rule.label}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <input
             type="password"
             required

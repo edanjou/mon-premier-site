@@ -1,37 +1,25 @@
 import type { Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 
-export type ModuleAccessLevel = "none" | "gestionnaire" | "scenariste";
+export type ModuleAccessLevel = "none" | "lecture" | "ecriture";
 
 export type ModuleDefinition = {
   key: string;
   label: string;
-  hasScenaristeTier: boolean;
 };
 
 export const MODULES: ModuleDefinition[] = [
-  {
-    key: "editeur-carte",
-    label: "Éditeur de carte",
-    hasScenaristeTier: false,
-  },
-  { key: "activites", label: "Campagnes militaires", hasScenaristeTier: true },
-  {
-    key: "grandes-batailles",
-    label: "Choses à faire",
-    hasScenaristeTier: true,
-  },
-  { key: "escarmouches", label: "Escarmouches", hasScenaristeTier: true },
-  { key: "scenarios", label: "Scénarios", hasScenaristeTier: true },
-  { key: "jeu", label: "Jeu", hasScenaristeTier: false },
-  { key: "homologation", label: "Homologation", hasScenaristeTier: false },
-  { key: "marechaux", label: "Maréchaux", hasScenaristeTier: false },
-  { key: "tournois", label: "Tournois", hasScenaristeTier: true },
-  {
-    key: "documents",
-    label: "Gestion documentaire",
-    hasScenaristeTier: false,
-  },
+  { key: "editeur-carte", label: "Création de carte" },
+  { key: "activites", label: "Campagnes militaires" },
+  { key: "grandes-batailles", label: "Choses à faire" },
+  { key: "escarmouches", label: "Escarmouches" },
+  { key: "scenarios", label: "Scénarios" },
+  { key: "jeu", label: "Jeu" },
+  { key: "homologation", label: "Homologation" },
+  { key: "marechaux", label: "Maréchaux" },
+  { key: "tournois", label: "Tournois" },
+  { key: "documents", label: "Gestion documentaire" },
+  { key: "feuille-de-temps", label: "Feuille de temps" },
 ];
 
 function moduleByKey(key: string): ModuleDefinition {
@@ -51,11 +39,12 @@ export const PERMISSION_TREE: PermissionTreeNode[] = [
   { type: "leaf", module: moduleByKey("editeur-carte") },
   {
     type: "group",
-    label: "Campagnes",
+    label: "Activités",
     children: [
       { type: "leaf", module: moduleByKey("marechaux") },
       { type: "leaf", module: moduleByKey("activites") },
       { type: "leaf", module: moduleByKey("documents") },
+      { type: "leaf", module: moduleByKey("scenarios") },
     ],
   },
   {
@@ -70,11 +59,11 @@ export const PERMISSION_TREE: PermissionTreeNode[] = [
           { type: "leaf", module: moduleByKey("grandes-batailles") },
           { type: "leaf", module: moduleByKey("escarmouches") },
           { type: "leaf", module: moduleByKey("homologation") },
+          { type: "leaf", module: moduleByKey("feuille-de-temps") },
         ],
       },
     ],
   },
-  { type: "leaf", module: moduleByKey("scenarios") },
   { type: "leaf", module: moduleByKey("jeu") },
 ];
 
@@ -84,14 +73,8 @@ export function collectModules(node: PermissionTreeNode): ModuleDefinition[] {
     : node.children.flatMap(collectModules);
 }
 
-export function scenaristeKey(moduleKey: string): string {
-  return `${moduleKey}-scenariste`;
-}
-
-export function moduleFeatureKeys(mod: ModuleDefinition): string[] {
-  return mod.hasScenaristeTier
-    ? [mod.key, scenaristeKey(mod.key)]
-    : [mod.key];
+export function ecritureKey(moduleKey: string): string {
+  return `${moduleKey}-ecriture`;
 }
 
 async function getGrantedFeatures(userId: string): Promise<Set<string>> {
@@ -107,10 +90,8 @@ export function moduleAccessLevel(
   mod: ModuleDefinition,
   granted: Set<string>,
 ): ModuleAccessLevel {
-  if (granted.has(mod.key)) return "gestionnaire";
-  if (mod.hasScenaristeTier && granted.has(scenaristeKey(mod.key))) {
-    return "scenariste";
-  }
+  if (granted.has(ecritureKey(mod.key))) return "ecriture";
+  if (granted.has(mod.key)) return "lecture";
   return "none";
 }
 
@@ -118,7 +99,7 @@ export async function getModuleAccessLevels(
   profile: Profile,
 ): Promise<Record<string, ModuleAccessLevel>> {
   if (profile.role === "admin") {
-    return Object.fromEntries(MODULES.map((m) => [m.key, "gestionnaire"]));
+    return Object.fromEntries(MODULES.map((m) => [m.key, "ecriture"]));
   }
   const granted = await getGrantedFeatures(profile.id);
   return Object.fromEntries(

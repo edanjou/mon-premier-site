@@ -1,5 +1,6 @@
 import {
   Archive,
+  Award,
   Axe,
   BadgeCheck,
   Briefcase,
@@ -7,7 +8,7 @@ import {
   ChessPawn,
   Clock,
   ClipboardList,
-  Flag,
+  Drama,
   Hammer,
   Home,
   IdCard,
@@ -23,7 +24,6 @@ import {
   Theater,
   Trophy,
   Users,
-  VenetianMask,
 } from "lucide-react";
 import type { HubItem, OrderColumn } from "@/components/module-hub";
 import BicollineIcon from "@/components/bicolline-icon";
@@ -52,10 +52,10 @@ export const COMBAT_ITEMS: HubItem[] = [
     disabled: true,
   },
   {
-    href: "#feuille-de-temps",
+    href: "/grande-bataille/combat/feuille-de-temps",
     label: "Feuille de temps",
     icon: Clock,
-    disabled: true,
+    moduleKey: "feuille-de-temps",
   },
   {
     href: "#grandes-batailles",
@@ -122,12 +122,18 @@ export const CAMPAGNES_ITEMS: HubItem[] = [
     icon: Archive,
     moduleKey: "documents",
   },
+  {
+    href: "/campagnes/scenarios",
+    label: "Scénarios spéciaux",
+    icon: ScrollText,
+    moduleKey: "scenarios",
+  },
 ];
 
 export const DASHBOARD_ITEMS: HubItem[] = [
   {
     href: "/campagnes",
-    label: "Campagnes",
+    label: "Activités",
     icon: Swords,
     noGate: true,
     childItems: CAMPAGNES_ITEMS,
@@ -139,28 +145,22 @@ export const DASHBOARD_ITEMS: HubItem[] = [
     noGate: true,
     childItems: GRANDE_BATAILLE_ITEMS,
   },
-  {
-    href: "/scenarios",
-    label: "Scénarios spéciaux",
-    icon: ScrollText,
-    moduleKey: "scenarios",
-  },
   { href: "/jeu", label: "Jeu", icon: ChessKnight, moduleKey: "jeu" },
   {
     href: "#tournoi-des-nations",
     label: "Tournoi des nations",
-    icon: Flag,
+    icon: Award,
     disabled: true,
   },
   {
     href: "#bal-pourpre",
     label: "Bal pourpre",
-    icon: VenetianMask,
+    icon: Drama,
     disabled: true,
   },
   {
     href: "/editeur-carte",
-    label: "Éditeur de carte",
+    label: "Création de carte",
     icon: MapPinned,
     moduleKey: "editeur-carte",
   },
@@ -180,6 +180,8 @@ const BREADCRUMB_LABELS: Record<string, string> = Object.fromEntries(
     .filter((item) => !item.disabled && item.href.startsWith("/"))
     .map((item) => [item.href, item.label]),
 );
+BREADCRUMB_LABELS["/grande-bataille/tournois/feuille-de-temps"] =
+  "Feuille de temps";
 
 export function breadcrumbFor(
   pathname: string,

@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
 import { syncReligionMembers } from "@/lib/bicolline-religion-sync";
-import { requireAdmin } from "@/lib/require-admin";
 
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
-  const auth = await requireAdmin(request);
-  if (!auth) {
-    return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Accès refusé." }, { status: 401 });
   }
 
   try {
-    const result = await syncReligionMembers({ force: true });
+    const result = await syncReligionMembers();
     return NextResponse.json({ status: "ok", ...result });
   } catch (err) {
-    console.error("sync-religion-members failed:", err);
+    console.error("sync-religion-members (cron) failed:", err);
     return NextResponse.json(
       {
         error:

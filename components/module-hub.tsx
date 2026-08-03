@@ -21,7 +21,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
-import { getModuleAccessLevels } from "@/lib/features";
+import { getModuleAccessLevels, type ModuleAccessLevel } from "@/lib/features";
 import { orderItems } from "@/lib/order-items";
 import { getOwnProfile, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
@@ -58,7 +58,7 @@ export function moduleKeyFor(item: HubItem): string {
 
 export function isItemAllowed(
   item: HubItem,
-  levels: Record<string, "none" | "gestionnaire" | "scenariste">,
+  levels: Record<string, ModuleAccessLevel>,
   isAdmin: boolean,
 ): boolean {
   if (item.childItems) {

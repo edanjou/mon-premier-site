@@ -1,20 +1,5 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { glofters } from "@/app/fonts/glofters";
-import Breadcrumb from "@/components/breadcrumb";
-import RequireFeature from "@/components/require-feature";
-
-const SCENARIOS_FEATURES = ["scenarios", "scenarios-scenariste"] as const;
-
-export default function ScenariosPage() {
-  return (
-    <RequireFeature feature={SCENARIOS_FEATURES}>
-      <div>
-        <h1 className={`${glofters.className} text-3xl text-foreground`}>
-          Scénarios
-        </h1>
-        <Breadcrumb />
-      </div>
-    </RequireFeature>
-  );
+export default function Page() {
+  redirect("/campagnes/scenarios");
 }

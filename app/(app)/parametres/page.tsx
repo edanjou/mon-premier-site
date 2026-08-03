@@ -6,11 +6,15 @@ import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import {
   getCharacterLastSyncedAt,
+  getCharacterSyncFrequency,
   getGuildLastSyncedAt,
   getGuildSyncFrequency,
   getReligionMemberLastSyncedAt,
+  getReligionMemberSyncFrequency,
   GUILD_SYNC_FREQUENCIES,
+  setCharacterSyncFrequency,
   setGuildSyncFrequency,
+  setReligionMemberSyncFrequency,
   type GuildSyncFrequency,
 } from "@/lib/app-settings";
 import {
@@ -173,6 +177,8 @@ function ChunkedSyncSettings({
   resultKey,
   unitLabel,
   getLastSyncedAt,
+  getFrequency,
+  setFrequency: saveFrequency,
 }: {
   title: string;
   description: string;
@@ -180,20 +186,45 @@ function ChunkedSyncSettings({
   resultKey: string;
   unitLabel: string;
   getLastSyncedAt: () => Promise<string | null>;
+  getFrequency: () => Promise<GuildSyncFrequency>;
+  setFrequency: (frequency: GuildSyncFrequency) => Promise<void>;
 }) {
+  const [frequency, setFrequency] = useState<GuildSyncFrequency>("weekly");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingFrequency, setIsSavingFrequency] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getLastSyncedAt().then((lastSynced) => {
-      setLastSyncedAt(lastSynced);
-      setIsLoading(false);
-    });
-  }, [getLastSyncedAt]);
+    Promise.all([getFrequency(), getLastSyncedAt()]).then(
+      ([freq, lastSynced]) => {
+        setFrequency(freq);
+        setLastSyncedAt(lastSynced);
+        setIsLoading(false);
+      },
+    );
+  }, [getFrequency, getLastSyncedAt]);
+
+  const handleFrequencyChange = async (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const next = e.target.value as GuildSyncFrequency;
+    setFrequency(next);
+    setError(null);
+    setMessage(null);
+    setIsSavingFrequency(true);
+    try {
+      await saveFrequency(next);
+      setMessage("Fréquence mise à jour.");
+    } catch {
+      setError("Échec de la mise à jour de la fréquence.");
+    } finally {
+      setIsSavingFrequency(false);
+    }
+  };
 
   const handleSyncNow = async () => {
     setError(null);
@@ -245,6 +276,18 @@ function ChunkedSyncSettings({
         <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <select
+            value={frequency}
+            onChange={handleFrequencyChange}
+            disabled={isSavingFrequency}
+            className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+          >
+            {GUILD_SYNC_FREQUENCIES.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={handleSyncNow}
@@ -732,6 +775,8 @@ export default function ParametresPage() {
             resultKey="charactersSynced"
             unitLabel="personnages"
             getLastSyncedAt={getCharacterLastSyncedAt}
+            getFrequency={getCharacterSyncFrequency}
+            setFrequency={setCharacterSyncFrequency}
           />
           <ChunkedSyncSettings
             title="Synchronisation des croyances et titres"
@@ -740,6 +785,8 @@ export default function ParametresPage() {
             resultKey="membersSynced"
             unitLabel="entrées"
             getLastSyncedAt={getReligionMemberLastSyncedAt}
+            getFrequency={getReligionMemberSyncFrequency}
+            setFrequency={setReligionMemberSyncFrequency}
           />
           <BattlefieldsSettings />
           <QuartiersSettings />

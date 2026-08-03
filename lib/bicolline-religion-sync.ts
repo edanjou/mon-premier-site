@@ -1,4 +1,5 @@
 import "server-only";
+import { isSyncDue } from "@/lib/app-settings";
 import {
   BICOLLINE_BASE_URL,
   cookieHeader,
@@ -10,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase-admin";
 
 const CURSOR_KEY = "religion_member_sync_cursor";
 const LAST_SYNCED_KEY = "religion_member_sync_last_synced_at";
+const FREQUENCY_KEY = "religion_member_sync_frequency";
 const TIME_BUDGET_MS = 250_000;
 const PAGE_SIZE = 20;
 
@@ -66,7 +68,10 @@ function extractTotalPages(html: string): number | null {
   return Math.ceil(parseInt(match[1], 10) / PAGE_SIZE);
 }
 
-export async function syncReligionMembers(): Promise<{
+export async function syncReligionMembers(options?: {
+  force?: boolean;
+}): Promise<{
+  skipped: boolean;
   done: boolean;
   pagesProcessed: number;
   membersSynced: number;
@@ -88,6 +93,21 @@ export async function syncReligionMembers(): Promise<{
     .eq("key", CURSOR_KEY)
     .maybeSingle();
   let page = cursorRow ? parseInt(cursorRow.value, 10) + 1 : 1;
+
+  if (page === 1 && !options?.force) {
+    const { data: settingsRows } = await admin
+      .from("app_settings")
+      .select("key, value")
+      .in("key", [FREQUENCY_KEY, LAST_SYNCED_KEY]);
+    const frequency =
+      settingsRows?.find((r) => r.key === FREQUENCY_KEY)?.value ?? "weekly";
+    const lastSyncedAt = settingsRows?.find(
+      (r) => r.key === LAST_SYNCED_KEY,
+    )?.value;
+    if (!isSyncDue(lastSyncedAt, frequency)) {
+      return { skipped: true, done: true, pagesProcessed: 0, membersSynced: 0 };
+    }
+  }
 
   const jar: CookieJar = await loginToBicollineAdmin(email, password);
 
@@ -152,5 +172,5 @@ export async function syncReligionMembers(): Promise<{
     ]);
   }
 
-  return { done, pagesProcessed, membersSynced };
+  return { skipped: false, done, pagesProcessed, membersSynced };
 }

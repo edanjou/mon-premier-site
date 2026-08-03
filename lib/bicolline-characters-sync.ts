@@ -1,4 +1,5 @@
 import "server-only";
+import { isSyncDue } from "@/lib/app-settings";
 import {
   BICOLLINE_BASE_URL,
   cookieHeader,
@@ -10,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase-admin";
 
 const CHARACTER_CURSOR_KEY = "character_sync_cursor";
 const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
+const CHARACTER_SYNC_FREQUENCY_KEY = "character_sync_frequency";
 const TIME_BUDGET_MS = 250_000;
 const PAGE_SIZE = 20;
 
@@ -83,7 +85,10 @@ function extractTotalPages(html: string): number | null {
   return Math.ceil(parseInt(match[1], 10) / PAGE_SIZE);
 }
 
-export async function syncCharacters(): Promise<{
+export async function syncCharacters(options?: {
+  force?: boolean;
+}): Promise<{
+  skipped: boolean;
   done: boolean;
   pagesProcessed: number;
   charactersSynced: number;
@@ -105,6 +110,22 @@ export async function syncCharacters(): Promise<{
     .eq("key", CHARACTER_CURSOR_KEY)
     .maybeSingle();
   let page = cursorRow ? parseInt(cursorRow.value, 10) + 1 : 1;
+
+  if (page === 1 && !options?.force) {
+    const { data: settingsRows } = await admin
+      .from("app_settings")
+      .select("key, value")
+      .in("key", [CHARACTER_SYNC_FREQUENCY_KEY, CHARACTER_LAST_SYNCED_KEY]);
+    const frequency =
+      settingsRows?.find((r) => r.key === CHARACTER_SYNC_FREQUENCY_KEY)
+        ?.value ?? "weekly";
+    const lastSyncedAt = settingsRows?.find(
+      (r) => r.key === CHARACTER_LAST_SYNCED_KEY,
+    )?.value;
+    if (!isSyncDue(lastSyncedAt, frequency)) {
+      return { skipped: true, done: true, pagesProcessed: 0, charactersSynced: 0 };
+    }
+  }
 
   const jar: CookieJar = await loginToBicollineAdmin(email, password);
 
@@ -172,5 +193,5 @@ export async function syncCharacters(): Promise<{
     ]);
   }
 
-  return { done, pagesProcessed, charactersSynced };
+  return { skipped: false, done, pagesProcessed, charactersSynced };
 }

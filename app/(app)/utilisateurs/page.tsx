@@ -1,6 +1,6 @@
 "use client";
 
-import { Feather, KeyRound, Plus, Trash2, X } from "lucide-react";
+import { Feather, KeyRound, Mail, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
@@ -8,9 +8,9 @@ import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
 import {
   collectModules,
+  ecritureKey,
   moduleAccessLevel,
   PERMISSION_TREE,
-  scenaristeKey,
   type ModuleAccessLevel,
   type ModuleDefinition,
   type PermissionTreeNode,
@@ -42,7 +42,6 @@ function CreateUserModal({
   onCreated: () => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -66,7 +65,7 @@ function CreateUserModal({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ email, password, firstName, lastName }),
+      body: JSON.stringify({ email, firstName, lastName }),
     });
     const body = await res.json();
     setIsCreating(false);
@@ -113,14 +112,11 @@ function CreateUserModal({
           placeholder="Email"
           className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
         />
-        <input
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Mot de passe"
-          className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-        />
+        <p className="text-xs text-foreground/50">
+          Un mot de passe sécuritaire est généré automatiquement. Utilise le
+          bouton &quot;Envoyer le lien&quot; dans la liste, une fois les
+          permissions attribuées, pour que la personne définisse le sien.
+        </p>
         {createError && (
           <p className="text-sm text-red-600 dark:text-red-400">
             {createError}
@@ -256,27 +252,7 @@ function PermissionTreeRow({
 
   if (node.type === "leaf") {
     const mod = node.module;
-    if (!mod.hasScenaristeTier) {
-      const isGranted = isAdmin || granted.has(mod.key);
-      return (
-        <label
-          style={indent}
-          className="flex items-center gap-2 py-1.5 text-sm text-foreground"
-        >
-          <input
-            type="checkbox"
-            checked={isGranted}
-            disabled={isAdmin}
-            onChange={(e) =>
-              onSetLevel(mod, e.target.checked ? "gestionnaire" : "none")
-            }
-            className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
-          />
-          {mod.label}
-        </label>
-      );
-    }
-    const level = isAdmin ? "gestionnaire" : moduleAccessLevel(mod, granted);
+    const level = isAdmin ? "ecriture" : moduleAccessLevel(mod, granted);
     return (
       <div
         style={indent}
@@ -292,8 +268,8 @@ function PermissionTreeRow({
           className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
         >
           <option value="none">Aucun accès</option>
-          <option value="gestionnaire">Gestionnaire</option>
-          <option value="scenariste">Scénariste</option>
+          <option value="lecture">Lecture</option>
+          <option value="ecriture">Écriture</option>
         </select>
       </div>
     );
@@ -302,8 +278,7 @@ function PermissionTreeRow({
   const mods = collectModules(node);
   const grantedCount = isAdmin
     ? mods.length
-    : mods.filter((m) => moduleAccessLevel(m, granted) === "gestionnaire")
-        .length;
+    : mods.filter((m) => moduleAccessLevel(m, granted) === "ecriture").length;
   const allGranted = grantedCount === mods.length;
   const noneGranted = grantedCount === 0;
 
@@ -322,7 +297,7 @@ function PermissionTreeRow({
           }}
           onChange={(e) =>
             mods.forEach((mod) =>
-              onSetLevel(mod, e.target.checked ? "gestionnaire" : "none"),
+              onSetLevel(mod, e.target.checked ? "ecriture" : "none"),
             )
           }
           className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
@@ -423,6 +398,7 @@ export default function UtilisateursPage() {
   const [permissionsUserId, setPermissionsUserId] = useState<string | null>(
     null,
   );
+  const [sendingLinkId, setSendingLinkId] = useState<string | null>(null);
 
   useEffect(() => {
     getOwnProfile().then((profile) => {
@@ -472,18 +448,18 @@ export default function UtilisateursPage() {
     mod: ModuleDefinition,
     level: ModuleAccessLevel,
   ) => {
-    const sKey = scenaristeKey(mod.key);
+    const eKey = ecritureKey(mod.key);
     await Promise.all([
       supabase
         .from("permissions")
         .upsert(
-          { user_id: userId, feature: mod.key, granted: level === "gestionnaire" },
+          { user_id: userId, feature: mod.key, granted: level !== "none" },
           { onConflict: "user_id,feature" },
         ),
       supabase
         .from("permissions")
         .upsert(
-          { user_id: userId, feature: sKey, granted: level === "scenariste" },
+          { user_id: userId, feature: eKey, granted: level === "ecriture" },
           { onConflict: "user_id,feature" },
         ),
     ]);
@@ -491,10 +467,10 @@ export default function UtilisateursPage() {
       prev.map((u) => {
         if (u.id !== userId) return u;
         const nextPermissions = u.permissions
-          .filter((p) => p.feature !== mod.key && p.feature !== sKey)
+          .filter((p) => p.feature !== mod.key && p.feature !== eKey)
           .concat([
-            { feature: mod.key, granted: level === "gestionnaire" },
-            { feature: sKey, granted: level === "scenariste" },
+            { feature: mod.key, granted: level !== "none" },
+            { feature: eKey, granted: level === "ecriture" },
           ]);
         return { ...u, permissions: nextPermissions };
       }),
@@ -525,6 +501,20 @@ export default function UtilisateursPage() {
     }
 
     setUsers((prev) => prev.filter((u) => u.id !== user.id));
+  };
+
+  const handleSendResetLink = async (user: AdminUser) => {
+    if (!user.email) return;
+    setSendingLinkId(user.id);
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setSendingLinkId(null);
+    if (error) {
+      alert("Échec de l'envoi du lien.");
+      return;
+    }
+    alert(`Lien envoyé à ${user.email}.`);
   };
 
   const { page, pageCount, setPage, pageItems } = usePagination(users);
@@ -618,6 +608,15 @@ export default function UtilisateursPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleSendResetLink(user)}
+                          disabled={sendingLinkId === user.id}
+                          aria-label="Envoyer le lien pour définir le mot de passe"
+                          title="Envoyer le lien pour définir le mot de passe"
+                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/[.08]"
+                        >
+                          <Mail size={16} />
+                        </button>
                         <button
                           onClick={() => setEditingUser(user)}
                           aria-label="Modifier"

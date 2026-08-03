@@ -29,6 +29,7 @@ import {
   type FrontColor,
 } from "@/lib/activity-fronts";
 import { searchCharacters, type Character } from "@/lib/characters";
+import { getModuleAccessLevels } from "@/lib/features";
 import {
   createMarechalTask,
   deleteMarechalTask,
@@ -60,6 +61,7 @@ import {
   setResponsableMedic,
   type Medic,
 } from "@/lib/medics";
+import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 import { listTaskTypes, type TaskType } from "@/lib/task-types";
 import {
@@ -385,7 +387,7 @@ function MarechalEditModal({
   );
 }
 
-function MarechauxTab() {
+function MarechauxTab({ canWrite }: { canWrite: boolean }) {
   const [marechaux, setMarechaux] = useState<Marechal[]>([]);
   const [campaignCounts, setCampaignCounts] = useState<Record<string, number>>(
     {},
@@ -420,6 +422,7 @@ function MarechauxTab() {
   }, []);
 
   const handleAdd = async (character: Character) => {
+    if (!canWrite) return;
     try {
       await addMarechal(character.external_id);
       await fetchAll();
@@ -429,6 +432,7 @@ function MarechauxTab() {
   };
 
   const handleRemove = async (marechal: Marechal) => {
+    if (!canWrite) return;
     if (!window.confirm(`Retirer ${marechalDisplayName(marechal)} des maréchaux ?`))
       return;
     try {
@@ -443,6 +447,7 @@ function MarechauxTab() {
     marechal: Marechal,
     field: "formation_2025" | "formation_2026",
   ) => {
+    if (!canWrite) return;
     const nextValue = !marechal[field];
     setMarechaux((prev) =>
       prev.map((m) => (m.id === marechal.id ? { ...m, [field]: nextValue } : m)),
@@ -474,10 +479,12 @@ function MarechauxTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AddMarechalSearch
-        onAdd={handleAdd}
-        excludeIds={marechaux.map((m) => m.character_id)}
-      />
+      {canWrite && (
+        <AddMarechalSearch
+          onAdd={handleAdd}
+          excludeIds={marechaux.map((m) => m.character_id)}
+        />
+      )}
 
       {isLoading && (
         <p className="text-sm text-foreground/60">Chargement…</p>
@@ -527,35 +534,45 @@ function MarechauxTab() {
                     <td className="py-2 pr-4 text-foreground/80">
                       <BooleanDot
                         value={m.formation_2025}
-                        onToggle={() => handleToggleFormation(m, "formation_2025")}
+                        onToggle={
+                          canWrite
+                            ? () => handleToggleFormation(m, "formation_2025")
+                            : undefined
+                        }
                       />
                     </td>
                     <td className="py-2 pr-4 text-foreground/80">
                       <BooleanDot
                         value={m.formation_2026}
-                        onToggle={() => handleToggleFormation(m, "formation_2026")}
+                        onToggle={
+                          canWrite
+                            ? () => handleToggleFormation(m, "formation_2026")
+                            : undefined
+                        }
                       />
                     </td>
                     <td className="py-2 pr-4 text-foreground/80">
                       {campaignCounts[m.id] ?? 0}
                     </td>
                     <td className="py-2 pr-4">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setEditingMarechal(m)}
-                          aria-label="Modifier"
-                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                        >
-                          <Feather size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleRemove(m)}
-                          aria-label="Supprimer"
-                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {canWrite && (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setEditingMarechal(m)}
+                            aria-label="Modifier"
+                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                          >
+                            <Feather size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleRemove(m)}
+                            aria-label="Supprimer"
+                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -585,10 +602,12 @@ function MarechauxTab() {
 function StatusModal({
   activity,
   marechaux,
+  canWrite,
   onClose,
 }: {
   activity: ActivityRow;
   marechaux: Marechal[];
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [statuses, setStatuses] = useState<
@@ -618,6 +637,7 @@ function StatusModal({
     marechalId: string,
     field: "is_available" | "is_assigned",
   ) => {
+    if (!canWrite) return;
     const current = statuses[marechalId] ?? {
       is_available: false,
       is_assigned: false,
@@ -719,14 +739,16 @@ function StatusModal({
                     <button
                       type="button"
                       onClick={() => toggle(m.id, "is_available")}
-                      className={pillClassName(status.is_available)}
+                      disabled={!canWrite}
+                      className={`${pillClassName(status.is_available)} disabled:cursor-default`}
                     >
                       Disponible
                     </button>
                     <button
                       type="button"
                       onClick={() => toggle(m.id, "is_assigned")}
-                      className={pillClassName(status.is_assigned)}
+                      disabled={!canWrite}
+                      className={`${pillClassName(status.is_assigned)} disabled:cursor-default`}
                     >
                       Assigné
                     </button>
@@ -741,7 +763,13 @@ function StatusModal({
   );
 }
 
-function CampagnesTab({ marechaux }: { marechaux: Marechal[] }) {
+function CampagnesTab({
+  marechaux,
+  canWrite,
+}: {
+  marechaux: Marechal[];
+  canWrite: boolean;
+}) {
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [counts, setCounts] = useState<
     Record<string, { available: number; assigned: number }>
@@ -877,6 +905,7 @@ function CampagnesTab({ marechaux }: { marechaux: Marechal[] }) {
         <StatusModal
           activity={statusActivity}
           marechaux={marechaux}
+          canWrite={canWrite}
           onClose={() => {
             setStatusActivity(null);
             fetchAll();
@@ -888,6 +917,7 @@ function CampagnesTab({ marechaux }: { marechaux: Marechal[] }) {
         <ActivityTasksModal
           activity={tasksActivity}
           marechaux={marechaux}
+          canWrite={canWrite}
           onClose={() => setTasksActivity(null)}
         />
       )}
@@ -898,10 +928,12 @@ function CampagnesTab({ marechaux }: { marechaux: Marechal[] }) {
 function ActivityTasksModal({
   activity,
   marechaux,
+  canWrite,
   onClose,
 }: {
   activity: ActivityRow;
   marechaux: Marechal[];
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [tasks, setTasks] = useState<MarechalTask[]>([]);
@@ -945,7 +977,7 @@ function ActivityTasksModal({
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedChapterId || !newLabel.trim()) return;
+    if (!canWrite || !selectedChapterId || !newLabel.trim()) return;
     setIsSubmitting(true);
     try {
       await createMarechalTask({
@@ -966,6 +998,7 @@ function ActivityTasksModal({
   };
 
   const handleAssign = async (task: MarechalTask, marechalId: string) => {
+    if (!canWrite) return;
     setTasks((prev) =>
       prev.map((t) =>
         t.id === task.id
@@ -984,6 +1017,7 @@ function ActivityTasksModal({
   };
 
   const handleSetTaskType = async (task: MarechalTask, taskTypeId: string) => {
+    if (!canWrite) return;
     const taskType = taskTypes.find((t) => t.id === taskTypeId) ?? null;
     setTasks((prev) =>
       prev.map((t) =>
@@ -1005,6 +1039,7 @@ function ActivityTasksModal({
   };
 
   const handleToggleDone = async (task: MarechalTask) => {
+    if (!canWrite) return;
     setTasks((prev) =>
       prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)),
     );
@@ -1017,6 +1052,7 @@ function ActivityTasksModal({
   };
 
   const handleToggleRamassage = async (task: MarechalTask) => {
+    if (!canWrite) return;
     setTasks((prev) =>
       prev.map((t) =>
         t.id === task.id ? { ...t, is_ramassage: !t.is_ramassage } : t,
@@ -1031,6 +1067,7 @@ function ActivityTasksModal({
   };
 
   const handleDelete = async (task: MarechalTask) => {
+    if (!canWrite) return;
     if (!window.confirm(`Supprimer la tâche "${task.label}" ?`)) return;
     try {
       await deleteMarechalTask(task.id);
@@ -1067,6 +1104,7 @@ function ActivityTasksModal({
           </button>
         </div>
 
+          {canWrite && (
           <form
             onSubmit={handleAddTask}
             className="flex flex-wrap items-end gap-2 rounded-lg border border-black/[.08] p-3 dark:border-white/[.145]"
@@ -1142,6 +1180,7 @@ function ActivityTasksModal({
               Ajouter
             </button>
           </form>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1195,7 +1234,8 @@ function ActivityTasksModal({
                     <select
                       value={task.assigned_marechal_id ?? ""}
                       onChange={(e) => handleAssign(task, e.target.value)}
-                      className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                      disabled={!canWrite}
+                      className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
                     >
                       <option value="">—</option>
                       {marechaux
@@ -1221,7 +1261,8 @@ function ActivityTasksModal({
                     <select
                       value={task.task_type_id ?? ""}
                       onChange={(e) => handleSetTaskType(task, e.target.value)}
-                      className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                      disabled={!canWrite}
+                      className="rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
                     >
                       <option value="">—</option>
                       {taskTypes.map((t) => (
@@ -1236,7 +1277,8 @@ function ActivityTasksModal({
                       type="checkbox"
                       checked={task.is_ramassage}
                       onChange={() => handleToggleRamassage(task)}
-                      className="h-4 w-4 cursor-pointer accent-primary"
+                      disabled={!canWrite}
+                      className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
                     />
                   </td>
                   <td className="py-2 pr-4">
@@ -1244,17 +1286,20 @@ function ActivityTasksModal({
                       type="checkbox"
                       checked={task.done}
                       onChange={() => handleToggleDone(task)}
-                      className="h-4 w-4 cursor-pointer accent-primary"
+                      disabled={!canWrite}
+                      className="h-4 w-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
                     />
                   </td>
                   <td className="py-2 pr-4">
-                    <button
-                      onClick={() => handleDelete(task)}
-                      aria-label="Supprimer"
-                      className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {canWrite && (
+                      <button
+                        onClick={() => handleDelete(task)}
+                        aria-label="Supprimer"
+                        className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1275,10 +1320,12 @@ function ActivityTasksModal({
 function MedicStatusModal({
   activity,
   medics,
+  canWrite,
   onClose,
 }: {
   activity: ActivityRow;
   medics: Medic[];
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [statuses, setStatuses] = useState<
@@ -1308,6 +1355,7 @@ function MedicStatusModal({
     medicId: string,
     field: "is_available" | "is_assigned",
   ) => {
+    if (!canWrite) return;
     const current = statuses[medicId] ?? {
       is_available: false,
       is_assigned: false,
@@ -1398,14 +1446,16 @@ function MedicStatusModal({
                     <button
                       type="button"
                       onClick={() => toggle(m.id, "is_available")}
-                      className={pillClassName(status.is_available)}
+                      disabled={!canWrite}
+                      className={`${pillClassName(status.is_available)} disabled:cursor-default`}
                     >
                       Disponible
                     </button>
                     <button
                       type="button"
                       onClick={() => toggle(m.id, "is_assigned")}
-                      className={pillClassName(status.is_assigned)}
+                      disabled={!canWrite}
+                      className={`${pillClassName(status.is_assigned)} disabled:cursor-default`}
                     >
                       Assigné
                     </button>
@@ -1420,7 +1470,7 @@ function MedicStatusModal({
   );
 }
 
-function MedicsTab() {
+function MedicsTab({ canWrite }: { canWrite: boolean }) {
   const [medics, setMedics] = useState<Medic[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1472,6 +1522,7 @@ function MedicsTab() {
   }, []);
 
   const handleAdd = async (character: Character) => {
+    if (!canWrite) return;
     try {
       await addMedic(character.external_id);
       await fetchMedics();
@@ -1481,6 +1532,7 @@ function MedicsTab() {
   };
 
   const handleRemove = async (medic: Medic) => {
+    if (!canWrite) return;
     if (!window.confirm(`Retirer ${marechalDisplayName(medic)} des médics ?`))
       return;
     try {
@@ -1492,6 +1544,7 @@ function MedicsTab() {
   };
 
   const handleToggleResponsable = async (medic: Medic) => {
+    if (!canWrite) return;
     const nextId = medic.is_responsable ? null : medic.id;
     setMedics((prev) =>
       prev.map((m) => ({ ...m, is_responsable: m.id === nextId })),
@@ -1519,10 +1572,12 @@ function MedicsTab() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
-        <AddMarechalSearch
-          onAdd={handleAdd}
-          excludeIds={medics.map((m) => m.character_id)}
-        />
+        {canWrite && (
+          <AddMarechalSearch
+            onAdd={handleAdd}
+            excludeIds={medics.map((m) => m.character_id)}
+          />
+        )}
 
         {isLoading && (
           <p className="text-sm text-foreground/60">Chargement…</p>
@@ -1561,12 +1616,13 @@ function MedicsTab() {
                       <td className="py-2 pr-4">
                         <button
                           onClick={() => handleToggleResponsable(m)}
+                          disabled={!canWrite}
                           aria-label={
                             m.is_responsable
                               ? "Retirer comme responsable"
                               : "Désigner comme responsable"
                           }
-                          className={`rounded-full p-2 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08] ${
+                          className={`rounded-full p-2 transition-colors hover:bg-black/[.05] disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-white/[.08] ${
                             m.is_responsable
                               ? "text-amber-500"
                               : "text-foreground/30"
@@ -1579,15 +1635,17 @@ function MedicsTab() {
                         </button>
                       </td>
                       <td className="py-2 pr-4">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleRemove(m)}
-                            aria-label="Supprimer"
-                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {canWrite && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleRemove(m)}
+                              aria-label="Supprimer"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1677,6 +1735,7 @@ function MedicsTab() {
         <MedicStatusModal
           activity={statusActivity}
           medics={medics}
+          canWrite={canWrite}
           onClose={() => {
             setStatusActivity(null);
             fetchActivities();
@@ -1690,10 +1749,12 @@ function MedicsTab() {
 function WeaponMasterStatusModal({
   activity,
   weaponMasters,
+  canWrite,
   onClose,
 }: {
   activity: ActivityRow;
   weaponMasters: WeaponMaster[];
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [statuses, setStatuses] = useState<
@@ -1731,6 +1792,7 @@ function WeaponMasterStatusModal({
     weaponMasterId: string,
     field: "is_available" | "is_assigned",
   ) => {
+    if (!canWrite) return;
     const current = statuses[weaponMasterId] ?? {
       is_available: false,
       is_assigned: false,
@@ -1766,6 +1828,7 @@ function WeaponMasterStatusModal({
   };
 
   const setFront = async (weaponMasterId: string, frontColor: string) => {
+    if (!canWrite) return;
     const current = statuses[weaponMasterId] ?? {
       is_available: false,
       is_assigned: false,
@@ -1845,7 +1908,8 @@ function WeaponMasterStatusModal({
                       <select
                         value={status.front_color ?? ""}
                         onChange={(e) => setFront(wm.id, e.target.value)}
-                        className="rounded border border-black/[.08] bg-white px-2 py-1 text-xs text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                        disabled={!canWrite}
+                        className="rounded border border-black/[.08] bg-white px-2 py-1 text-xs text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
                       >
                         <option value="">Front —</option>
                         {FRONT_COLORS.map((color) => (
@@ -1857,14 +1921,16 @@ function WeaponMasterStatusModal({
                       <button
                         type="button"
                         onClick={() => toggle(wm.id, "is_available")}
-                        className={pillClassName(status.is_available)}
+                        disabled={!canWrite}
+                        className={`${pillClassName(status.is_available)} disabled:cursor-default`}
                       >
                         Disponible
                       </button>
                       <button
                         type="button"
                         onClick={() => toggle(wm.id, "is_assigned")}
-                        className={pillClassName(status.is_assigned)}
+                        disabled={!canWrite}
+                        className={`${pillClassName(status.is_assigned)} disabled:cursor-default`}
                       >
                         Assigné
                       </button>
@@ -1879,7 +1945,7 @@ function WeaponMasterStatusModal({
   );
 }
 
-function WeaponMastersTab() {
+function WeaponMastersTab({ canWrite }: { canWrite: boolean }) {
   const [weaponMasters, setWeaponMasters] = useState<WeaponMaster[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1933,6 +1999,7 @@ function WeaponMastersTab() {
   }, []);
 
   const handleAdd = async (character: Character) => {
+    if (!canWrite) return;
     try {
       await addWeaponMaster(character.external_id);
       await fetchWeaponMasters();
@@ -1942,6 +2009,7 @@ function WeaponMastersTab() {
   };
 
   const handleRemove = async (weaponMaster: WeaponMaster) => {
+    if (!canWrite) return;
     if (
       !window.confirm(
         `Retirer ${marechalDisplayName(weaponMaster)} des maîtres d'armes ?`,
@@ -1971,10 +2039,12 @@ function WeaponMastersTab() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
-        <AddMarechalSearch
-          onAdd={handleAdd}
-          excludeIds={weaponMasters.map((w) => w.character_id)}
-        />
+        {canWrite && (
+          <AddMarechalSearch
+            onAdd={handleAdd}
+            excludeIds={weaponMasters.map((w) => w.character_id)}
+          />
+        )}
 
         {isLoading && (
           <p className="text-sm text-foreground/60">Chargement…</p>
@@ -2010,15 +2080,17 @@ function WeaponMastersTab() {
                         {marechalDisplayName(w)}
                       </td>
                       <td className="py-2 pr-4">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleRemove(w)}
-                            aria-label="Supprimer"
-                            className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {canWrite && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleRemove(w)}
+                              aria-label="Supprimer"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -2108,6 +2180,7 @@ function WeaponMastersTab() {
         <WeaponMasterStatusModal
           activity={statusActivity}
           weaponMasters={weaponMasters}
+          canWrite={canWrite}
           onClose={() => {
             setStatusActivity(null);
             fetchActivities();
@@ -2121,12 +2194,22 @@ function WeaponMastersTab() {
 function MarechauxContent() {
   const [tab, setTab] = useState<Tab>("marechaux");
   const [marechaux, setMarechaux] = useState<Marechal[]>([]);
+  const [canWrite, setCanWrite] = useState(true);
 
   useEffect(() => {
     if (tab === "campagnes") {
       listMarechaux().then(setMarechaux);
     }
   }, [tab]);
+
+  useEffect(() => {
+    getOwnProfile().then((profile) => {
+      if (!profile) return;
+      getModuleAccessLevels(profile).then((levels) => {
+        setCanWrite(levels["marechaux"] === "ecriture");
+      });
+    });
+  }, []);
 
   return (
     <div>
@@ -2161,10 +2244,14 @@ function MarechauxContent() {
       </div>
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
-        {tab === "marechaux" && <MarechauxTab />}
-        {tab === "campagnes" && <CampagnesTab marechaux={marechaux} />}
-        {tab === "medics" && <MedicsTab />}
-        {tab === "weapon-masters" && <WeaponMastersTab />}
+        {tab === "marechaux" && <MarechauxTab canWrite={canWrite} />}
+        {tab === "campagnes" && (
+          <CampagnesTab marechaux={marechaux} canWrite={canWrite} />
+        )}
+        {tab === "medics" && <MedicsTab canWrite={canWrite} />}
+        {tab === "weapon-masters" && (
+          <WeaponMastersTab canWrite={canWrite} />
+        )}
       </div>
     </div>
   );

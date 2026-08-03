@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import RequireFeature from "@/components/require-feature";
+import { getModuleAccessLevels } from "@/lib/features";
 import {
   CHECKLIST_ASSIGNEE_STYLES,
   CHECKLIST_ASSIGNEE_UNSET_STYLE,
@@ -48,6 +49,7 @@ import {
   type ChecklistItem,
   type ChecklistType,
 } from "@/lib/grandes-batailles-checklist";
+import { getOwnProfile } from "@/lib/profile";
 
 function assigneeSelectClassName(assignedTo: string | null): string {
   const style =
@@ -65,11 +67,6 @@ function typeSelectClassName(taskType: string | null): string {
   return `flex-shrink-0 rounded border border-black/[.08] px-2 py-1 text-xs font-medium dark:border-white/[.145] ${style}`;
 }
 
-const GRANDES_BATAILLES_FEATURES = [
-  "grandes-batailles",
-  "grandes-batailles-scenariste",
-] as const;
-
 type Tab = "choses-a-faire" | "preparation-gb-eric";
 
 const TABS: { key: Tab; label: string; icon: typeof ListChecks }[] = [
@@ -83,6 +80,7 @@ const TABS: { key: Tab; label: string; icon: typeof ListChecks }[] = [
 
 function SortableChecklistItem({
   item,
+  canWrite,
   isEditing,
   editingLabel,
   onEditingLabelChange,
@@ -95,6 +93,7 @@ function SortableChecklistItem({
   onDelete,
 }: {
   item: ChecklistItem;
+  canWrite: boolean;
   isEditing: boolean;
   editingLabel: string;
   onEditingLabelChange: (value: string) => void;
@@ -107,7 +106,7 @@ function SortableChecklistItem({
   onDelete: (item: ChecklistItem) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+    useSortable({ id: item.id, disabled: !canWrite });
 
   return (
     <div
@@ -117,21 +116,23 @@ function SortableChecklistItem({
         isDragging ? "relative z-10 opacity-50" : ""
       }`}
     >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label="Déplacer"
-        className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
-      >
-        <GripVertical size={14} />
-      </button>
+      {canWrite && (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Déplacer"
+          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+        >
+          <GripVertical size={14} />
+        </button>
+      )}
       <input
         type="checkbox"
         checked={item.done}
         onChange={() => onToggle(item)}
-        disabled={isEditing}
-        className="h-4 w-4 flex-shrink-0 accent-primary"
+        disabled={isEditing || !canWrite}
+        className="h-4 w-4 flex-shrink-0 accent-primary disabled:cursor-not-allowed"
       />
       {isEditing ? (
         <>
@@ -203,7 +204,8 @@ function SortableChecklistItem({
           <select
             value={item.task_type ?? ""}
             onChange={(e) => onTypeChange(item, e.target.value || null)}
-            className={typeSelectClassName(item.task_type)}
+            disabled={!canWrite}
+            className={`${typeSelectClassName(item.task_type)} disabled:opacity-60`}
           >
             <option value="">Type…</option>
             {CHECKLIST_TYPES.map((type) => (
@@ -215,7 +217,8 @@ function SortableChecklistItem({
           <select
             value={item.assigned_to ?? ""}
             onChange={(e) => onAssigneeChange(item, e.target.value || null)}
-            className={assigneeSelectClassName(item.assigned_to)}
+            disabled={!canWrite}
+            className={`${assigneeSelectClassName(item.assigned_to)} disabled:opacity-60`}
           >
             <option value="">—</option>
             {CHECKLIST_ASSIGNEES.map((name) => (
@@ -224,29 +227,39 @@ function SortableChecklistItem({
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => onStartEdit(item)}
-            aria-label="Modifier"
-            className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-          >
-            <Feather size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(item)}
-            aria-label="Supprimer"
-            className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-          >
-            <Trash2 size={14} />
-          </button>
+          {canWrite && (
+            <>
+              <button
+                type="button"
+                onClick={() => onStartEdit(item)}
+                aria-label="Modifier"
+                className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+              >
+                <Feather size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(item)}
+                aria-label="Supprimer"
+                className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+              >
+                <Trash2 size={14} />
+              </button>
+            </>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function ChecklistTab({ listKey }: { listKey: string }) {
+function ChecklistTab({
+  listKey,
+  canWrite,
+}: {
+  listKey: string;
+  canWrite: boolean;
+}) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -275,7 +288,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLabel.trim()) return;
+    if (!canWrite || !newLabel.trim()) return;
     setIsSubmitting(true);
     try {
       const created = await createChecklistItem(listKey, newLabel.trim());
@@ -289,6 +302,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
   };
 
   const handleToggle = async (item: ChecklistItem) => {
+    if (!canWrite) return;
     const nextDone = !item.done;
     setItems((prev) =>
       prev.map((i) => (i.id === item.id ? { ...i, done: nextDone } : i)),
@@ -307,6 +321,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
     item: ChecklistItem,
     assignedTo: string | null,
   ) => {
+    if (!canWrite) return;
     setItems((prev) =>
       prev.map((i) =>
         i.id === item.id ? { ...i, assigned_to: assignedTo } : i,
@@ -328,6 +343,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
     item: ChecklistItem,
     taskType: string | null,
   ) => {
+    if (!canWrite) return;
     setItems((prev) =>
       prev.map((i) => (i.id === item.id ? { ...i, task_type: taskType } : i)),
     );
@@ -344,6 +360,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
   };
 
   const handleStartEdit = (item: ChecklistItem) => {
+    if (!canWrite) return;
     setEditingId(item.id);
     setEditingLabel(item.label);
   };
@@ -371,6 +388,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
   };
 
   const handleDelete = async (item: ChecklistItem) => {
+    if (!canWrite) return;
     setItems((prev) => prev.filter((i) => i.id !== item.id));
     try {
       await deleteChecklistItem(item.id);
@@ -393,6 +411,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
   });
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const fromIndex = visibleItems.findIndex((i) => i.id === active.id);
@@ -417,6 +436,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
   };
 
   const handleClearCompleted = async () => {
+    if (!canWrite) return;
     if (!window.confirm("Supprimer toutes les tâches complétées ?")) return;
     const remaining = items.filter((i) => !i.done);
     setItems(remaining);
@@ -432,25 +452,27 @@ function ChecklistTab({ listKey }: { listKey: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={handleAdd} className="flex items-center gap-2">
-        <input
-          type="text"
-          name="checklist-item-label"
-          autoComplete="off"
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-          placeholder="Ajouter un élément…"
-          className="flex-1 rounded-full border border-black/[.08] bg-white px-4 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-        />
-        <button
-          type="submit"
-          disabled={isSubmitting || !newLabel.trim()}
-          className="flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Plus size={16} />
-          Ajouter
-        </button>
-      </form>
+      {canWrite && (
+        <form onSubmit={handleAdd} className="flex items-center gap-2">
+          <input
+            type="text"
+            name="checklist-item-label"
+            autoComplete="off"
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="Ajouter un élément…"
+            className="flex-1 rounded-full border border-black/[.08] bg-white px-4 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+          />
+          <button
+            type="submit"
+            disabled={isSubmitting || !newLabel.trim()}
+            className="flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Plus size={16} />
+            Ajouter
+          </button>
+        </form>
+      )}
 
       {isLoading && <p className="text-sm text-foreground/60">Chargement…</p>}
       {error && (
@@ -478,6 +500,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
                 <SortableChecklistItem
                   key={item.id}
                   item={item}
+                  canWrite={canWrite}
                   isEditing={editingId === item.id}
                   editingLabel={editingLabel}
                   onEditingLabelChange={setEditingLabel}
@@ -495,7 +518,7 @@ function ChecklistTab({ listKey }: { listKey: string }) {
         </DndContext>
       )}
 
-      {doneCount > 0 && (
+      {canWrite && doneCount > 0 && (
         <div>
           <button
             type="button"
@@ -513,6 +536,16 @@ function ChecklistTab({ listKey }: { listKey: string }) {
 
 function GrandesBataillesContent() {
   const [tab, setTab] = useState<Tab>("choses-a-faire");
+  const [canWrite, setCanWrite] = useState(true);
+
+  useEffect(() => {
+    getOwnProfile().then((profile) => {
+      if (!profile) return;
+      getModuleAccessLevels(profile).then((levels) => {
+        setCanWrite(levels["grandes-batailles"] === "ecriture");
+      });
+    });
+  }, []);
 
   return (
     <div>
@@ -544,10 +577,10 @@ function GrandesBataillesContent() {
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
         {tab === "choses-a-faire" && (
-          <ChecklistTab listKey="choses-a-faire" />
+          <ChecklistTab listKey="choses-a-faire" canWrite={canWrite} />
         )}
         {tab === "preparation-gb-eric" && (
-          <ChecklistTab listKey="preparation-gb-eric" />
+          <ChecklistTab listKey="preparation-gb-eric" canWrite={canWrite} />
         )}
       </div>
     </div>
@@ -556,7 +589,7 @@ function GrandesBataillesContent() {
 
 export default function GrandesBataillesPage() {
   return (
-    <RequireFeature feature={GRANDES_BATAILLES_FEATURES}>
+    <RequireFeature feature="grandes-batailles">
       <GrandesBataillesContent />
     </RequireFeature>
   );

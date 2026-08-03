@@ -6,7 +6,7 @@ import { CAMPAGNES_ITEMS } from "@/lib/hub-items";
 export default function CampagnesHubPage() {
   return (
     <ModuleHub
-      title="Campagnes"
+      title="Activités"
       orderColumn="campagnes_order"
       items={CAMPAGNES_ITEMS}
     />

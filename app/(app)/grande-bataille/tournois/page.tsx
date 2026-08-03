@@ -27,12 +27,15 @@ import {
   Users,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import RequireFeature from "@/components/require-feature";
 import RichTextEditor from "@/components/rich-text-editor";
 import { searchCharacters, type Character } from "@/lib/characters";
+import { getModuleAccessLevels } from "@/lib/features";
+import { getOwnProfile } from "@/lib/profile";
 import {
   addTournamentVolunteer,
   createTournament,
@@ -48,8 +51,6 @@ import {
   type Tournament,
   type TournamentVolunteer,
 } from "@/lib/tournaments";
-
-const TOURNOIS_FEATURES = ["tournois", "tournois-scenariste"] as const;
 
 const fieldClassName =
   "rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800";
@@ -186,10 +187,12 @@ type ScheduleFormRow = {
 
 function SortableScheduleRow({
   row,
+  canWrite,
   onUpdate,
   onRemove,
 }: {
   row: ScheduleFormRow;
+  canWrite: boolean;
   onUpdate: (
     key: string,
     field: "label" | "startTime" | "endTime",
@@ -198,7 +201,7 @@ function SortableScheduleRow({
   onRemove: (key: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: row.key });
+    useSortable({ id: row.key, disabled: !canWrite });
 
   return (
     <div
@@ -208,42 +211,49 @@ function SortableScheduleRow({
         isDragging ? "relative z-10 opacity-50" : ""
       }`}
     >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label="Déplacer"
-        className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
-      >
-        <GripVertical size={14} />
-      </button>
+      {canWrite && (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Déplacer"
+          className="cursor-grab touch-none text-foreground/40 hover:text-foreground/70"
+        >
+          <GripVertical size={14} />
+        </button>
+      )}
       <input
         type="time"
         value={row.startTime}
         onChange={(e) => onUpdate(row.key, "startTime", e.target.value)}
-        className={fieldClassName}
+        disabled={!canWrite}
+        className={`${fieldClassName} disabled:opacity-60`}
       />
       <input
         type="time"
         value={row.endTime}
         onChange={(e) => onUpdate(row.key, "endTime", e.target.value)}
-        className={fieldClassName}
+        disabled={!canWrite}
+        className={`${fieldClassName} disabled:opacity-60`}
       />
       <input
         type="text"
         value={row.label}
         onChange={(e) => onUpdate(row.key, "label", e.target.value)}
         placeholder="Nom du bloc (ex. Inscriptions)"
-        className={`flex-1 ${fieldClassName}`}
+        disabled={!canWrite}
+        className={`flex-1 ${fieldClassName} disabled:opacity-60`}
       />
-      <button
-        type="button"
-        onClick={() => onRemove(row.key)}
-        aria-label="Retirer"
-        className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-      >
-        <X size={14} />
-      </button>
+      {canWrite && (
+        <button
+          type="button"
+          onClick={() => onRemove(row.key)}
+          aria-label="Retirer"
+          className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+        >
+          <X size={14} />
+        </button>
+      )}
     </div>
   );
 }
@@ -317,10 +327,12 @@ function AddVolunteerSearch({
 
 function TournamentDetailsModal({
   tournament,
+  canWrite,
   onClose,
   onSaved,
 }: {
   tournament: Tournament;
+  canWrite: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -353,6 +365,7 @@ function TournamentDetailsModal({
   }, [tournament.id]);
 
   const addScheduleRow = () => {
+    if (!canWrite) return;
     const maxPosition = Math.max(-1, ...scheduleRows.map((r) => r.position));
     setScheduleRows((prev) => [
       ...prev,
@@ -371,12 +384,14 @@ function TournamentDetailsModal({
     field: "label" | "startTime" | "endTime",
     value: string,
   ) => {
+    if (!canWrite) return;
     setScheduleRows((prev) =>
       prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)),
     );
   };
 
   const removeScheduleRow = (key: string) => {
+    if (!canWrite) return;
     setScheduleRows((prev) => prev.filter((r) => r.key !== key));
   };
 
@@ -388,6 +403,7 @@ function TournamentDetailsModal({
   );
 
   const handleScheduleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const fromIndex = scheduleRows.findIndex((r) => r.key === active.id);
@@ -400,6 +416,7 @@ function TournamentDetailsModal({
   };
 
   const handleAddVolunteer = async (character: Character) => {
+    if (!canWrite) return;
     try {
       const created = await addTournamentVolunteer(
         tournament.id,
@@ -412,12 +429,14 @@ function TournamentDetailsModal({
   };
 
   const handleVolunteerRoleChange = (id: string, role: string) => {
+    if (!canWrite) return;
     setVolunteers((prev) =>
       prev.map((v) => (v.id === id ? { ...v, role } : v)),
     );
   };
 
   const handleVolunteerRoleBlur = async (volunteer: TournamentVolunteer) => {
+    if (!canWrite) return;
     try {
       await updateTournamentVolunteerRole(
         volunteer.id,
@@ -429,6 +448,7 @@ function TournamentDetailsModal({
   };
 
   const handleRemoveVolunteer = async (volunteer: TournamentVolunteer) => {
+    if (!canWrite) return;
     setVolunteers((prev) => prev.filter((v) => v.id !== volunteer.id));
     try {
       await removeTournamentVolunteer(volunteer.id);
@@ -440,6 +460,7 @@ function TournamentDetailsModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canWrite) return;
     setError(null);
     setIsSaving(true);
     try {
@@ -530,6 +551,7 @@ function TournamentDetailsModal({
                           <SortableScheduleRow
                             key={row.key}
                             row={row}
+                            canWrite={canWrite}
                             onUpdate={updateScheduleRow}
                             onRemove={removeScheduleRow}
                           />
@@ -542,14 +564,16 @@ function TournamentDetailsModal({
                       Aucun bloc pour l&apos;instant.
                     </p>
                   )}
-                  <button
-                    type="button"
-                    onClick={addScheduleRow}
-                    className="flex w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    <Plus size={14} />
-                    Ajouter un bloc
-                  </button>
+                  {canWrite && (
+                    <button
+                      type="button"
+                      onClick={addScheduleRow}
+                      className="flex w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    >
+                      <Plus size={14} />
+                      Ajouter un bloc
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -559,15 +583,18 @@ function TournamentDetailsModal({
                   onChange={setRules}
                   placeholder="Détailler les règles du tournoi"
                   minHeight="10rem"
+                  readOnly={!canWrite}
                 />
               )}
 
               {tab === "benevoles" && (
                 <div className="flex flex-col gap-4">
-                  <AddVolunteerSearch
-                    onAdd={handleAddVolunteer}
-                    excludeIds={volunteers.map((v) => v.character_id)}
-                  />
+                  {canWrite && (
+                    <AddVolunteerSearch
+                      onAdd={handleAddVolunteer}
+                      excludeIds={volunteers.map((v) => v.character_id)}
+                    />
+                  )}
                   {volunteers.length === 0 && (
                     <p className="text-sm text-foreground/60">
                       Aucun bénévole pour l&apos;instant.
@@ -590,8 +617,10 @@ function TournamentDetailsModal({
                           }
                           onBlur={() => handleVolunteerRoleBlur(v)}
                           placeholder="Rôle (ex. Arbitre, Inscriptions)"
-                          className={`w-64 ${fieldClassName}`}
+                          disabled={!canWrite}
+                          className={`w-64 ${fieldClassName} disabled:opacity-60`}
                         />
+                        {canWrite && (
                         <button
                           type="button"
                           onClick={() => handleRemoveVolunteer(v)}
@@ -600,6 +629,7 @@ function TournamentDetailsModal({
                         >
                           <Trash2 size={14} />
                         </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -621,13 +651,15 @@ function TournamentDetailsModal({
           >
             Fermer
           </button>
-          <button
-            type="submit"
-            disabled={isSaving || isLoading}
-            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "…" : "Enregistrer"}
-          </button>
+          {canWrite && (
+            <button
+              type="submit"
+              disabled={isSaving || isLoading}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "…" : "Enregistrer"}
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -644,6 +676,16 @@ function TournamentsContent() {
   const [detailsTournament, setDetailsTournament] = useState<Tournament | null>(
     null,
   );
+  const [canWrite, setCanWrite] = useState(true);
+
+  useEffect(() => {
+    getOwnProfile().then((profile) => {
+      if (!profile) return;
+      getModuleAccessLevels(profile).then((levels) => {
+        setCanWrite(levels["tournois"] === "ecriture");
+      });
+    });
+  }, []);
 
   const fetchAll = async () => {
     setIsLoading(true);
@@ -663,6 +705,7 @@ function TournamentsContent() {
   }, []);
 
   const handleDelete = async (tournament: Tournament) => {
+    if (!canWrite) return;
     if (!window.confirm(`Supprimer le tournoi "${tournament.name}" ?`))
       return;
     try {
@@ -679,14 +722,25 @@ function TournamentsContent() {
         <h1 className={`${glofters.className} text-3xl text-foreground`}>
           Tournois
         </h1>
-        <button
-          type="button"
-          onClick={() => setFormTournament("new")}
-          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
-        >
-          <Plus size={16} />
-          Ajouter un tournoi
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/grande-bataille/tournois/feuille-de-temps"
+            className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+          >
+            <Clock size={16} />
+            Feuille de temps
+          </Link>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => setFormTournament("new")}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390]"
+            >
+              <Plus size={16} />
+              Ajouter un tournoi
+            </button>
+          )}
+        </div>
       </div>
       <Breadcrumb />
 
@@ -733,22 +787,26 @@ function TournamentsContent() {
                         >
                           Détails
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormTournament(tournament)}
-                          aria-label="Modifier"
-                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                        >
-                          <Feather size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(tournament)}
-                          aria-label="Supprimer"
-                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canWrite && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setFormTournament(tournament)}
+                              aria-label="Modifier"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Feather size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(tournament)}
+                              aria-label="Supprimer"
+                              className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -770,6 +828,7 @@ function TournamentsContent() {
       {detailsTournament && (
         <TournamentDetailsModal
           tournament={detailsTournament}
+          canWrite={canWrite}
           onClose={() => setDetailsTournament(null)}
           onSaved={fetchAll}
         />
@@ -780,7 +839,7 @@ function TournamentsContent() {
 
 export default function TournoisPage() {
   return (
-    <RequireFeature feature={TOURNOIS_FEATURES}>
+    <RequireFeature feature="tournois">
       <TournamentsContent />
     </RequireFeature>
   );

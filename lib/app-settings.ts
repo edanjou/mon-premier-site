@@ -19,25 +19,82 @@ export const GUILD_SYNC_FREQUENCIES = [
 export type GuildSyncFrequency =
   (typeof GUILD_SYNC_FREQUENCIES)[number]["value"];
 
-const GUILD_SYNC_FREQUENCY_KEY = "guild_sync_frequency";
-const GUILD_LAST_SYNCED_KEY = "guild_last_synced_at";
-const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
-const RELIGION_MEMBER_LAST_SYNCED_KEY = "religion_member_sync_last_synced_at";
+// Generic alias — this frequency scale and its interval math are shared by
+// every scraped-data sync (guilds, characters, religion members), not just guilds.
+export type SyncFrequency = GuildSyncFrequency;
+export const SYNC_FREQUENCIES = GUILD_SYNC_FREQUENCIES;
 
-export async function getGuildSyncFrequency(): Promise<GuildSyncFrequency> {
-  const value = await getAppSettingValue(GUILD_SYNC_FREQUENCY_KEY);
-  return (value as GuildSyncFrequency | null) ?? "weekly";
+export const FREQUENCY_INTERVAL_MS: Record<string, number> = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+  biweekly: 14 * 24 * 60 * 60 * 1000,
+  monthly: 30 * 24 * 60 * 60 * 1000,
+};
+
+// Pure — safe to import from server-only sync modules that read app_settings
+// via their own admin Supabase client rather than the one in this file.
+export function isSyncDue(
+  lastSyncedAt: string | null | undefined,
+  frequency: string,
+): boolean {
+  if (!lastSyncedAt) return true;
+  const intervalMs =
+    FREQUENCY_INTERVAL_MS[frequency] ?? FREQUENCY_INTERVAL_MS.weekly;
+  return Date.now() - new Date(lastSyncedAt).getTime() >= intervalMs;
 }
 
-export async function setGuildSyncFrequency(
-  frequency: GuildSyncFrequency,
+const GUILD_SYNC_FREQUENCY_KEY = "guild_sync_frequency";
+const GUILD_LAST_SYNCED_KEY = "guild_last_synced_at";
+const CHARACTER_SYNC_FREQUENCY_KEY = "character_sync_frequency";
+const CHARACTER_LAST_SYNCED_KEY = "character_sync_last_synced_at";
+const RELIGION_MEMBER_SYNC_FREQUENCY_KEY = "religion_member_sync_frequency";
+const RELIGION_MEMBER_LAST_SYNCED_KEY = "religion_member_sync_last_synced_at";
+
+async function getSyncFrequency(key: string): Promise<SyncFrequency> {
+  const value = await getAppSettingValue(key);
+  return (value as SyncFrequency | null) ?? "weekly";
+}
+
+async function setSyncFrequency(
+  key: string,
+  frequency: SyncFrequency,
 ): Promise<void> {
   const { error } = await supabase.from("app_settings").upsert({
-    key: GUILD_SYNC_FREQUENCY_KEY,
+    key,
     value: frequency,
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
+}
+
+export function getGuildSyncFrequency(): Promise<GuildSyncFrequency> {
+  return getSyncFrequency(GUILD_SYNC_FREQUENCY_KEY);
+}
+
+export function setGuildSyncFrequency(
+  frequency: GuildSyncFrequency,
+): Promise<void> {
+  return setSyncFrequency(GUILD_SYNC_FREQUENCY_KEY, frequency);
+}
+
+export function getCharacterSyncFrequency(): Promise<SyncFrequency> {
+  return getSyncFrequency(CHARACTER_SYNC_FREQUENCY_KEY);
+}
+
+export function setCharacterSyncFrequency(
+  frequency: SyncFrequency,
+): Promise<void> {
+  return setSyncFrequency(CHARACTER_SYNC_FREQUENCY_KEY, frequency);
+}
+
+export function getReligionMemberSyncFrequency(): Promise<SyncFrequency> {
+  return getSyncFrequency(RELIGION_MEMBER_SYNC_FREQUENCY_KEY);
+}
+
+export function setReligionMemberSyncFrequency(
+  frequency: SyncFrequency,
+): Promise<void> {
+  return setSyncFrequency(RELIGION_MEMBER_SYNC_FREQUENCY_KEY, frequency);
 }
 
 export function getGuildLastSyncedAt(): Promise<string | null> {

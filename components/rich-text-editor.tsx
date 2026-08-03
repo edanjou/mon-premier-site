@@ -162,16 +162,19 @@ export default function RichTextEditor({
   onChange,
   placeholder,
   minHeight = "8rem",
+  readOnly = false,
 }: {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
   minHeight?: string;
+  readOnly?: boolean;
 }) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [StarterKit],
     content: value,
+    editable: !readOnly,
     editorProps: {
       attributes: {
         class:
@@ -192,11 +195,15 @@ export default function RichTextEditor({
     }
   }, [editor, value]);
 
+  useEffect(() => {
+    editor?.setEditable(!readOnly);
+  }, [editor, readOnly]);
+
   const isEmpty = !value || value === "<p></p>";
 
   return (
     <div className="overflow-hidden rounded border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-800">
-      {editor && <Toolbar editor={editor} />}
+      {editor && !readOnly && <Toolbar editor={editor} />}
       <div className="relative" style={{ minHeight }}>
         {isEmpty && placeholder && (
           <span className="pointer-events-none absolute left-3 top-2 text-sm text-foreground/40">

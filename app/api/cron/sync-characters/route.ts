@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
 import { syncCharacters } from "@/lib/bicolline-characters-sync";
-import { requireAdmin } from "@/lib/require-admin";
 
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
-  const auth = await requireAdmin(request);
-  if (!auth) {
-    return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Accès refusé." }, { status: 401 });
   }
 
   try {
-    const result = await syncCharacters({ force: true });
+    const result = await syncCharacters();
     return NextResponse.json({ status: "ok", ...result });
   } catch (err) {
-    console.error("sync-characters failed:", err);
+    console.error("sync-characters (cron) failed:", err);
     return NextResponse.json(
       {
         error:

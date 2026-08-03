@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle,
+  Archive,
   BookOpen,
   BookText,
   ChevronDown,
@@ -40,6 +41,7 @@ import {
   Swords,
   Ticket,
   Trash2,
+  Unlink,
   Upload,
   Variable,
   Wand2,
@@ -112,6 +114,12 @@ import {
 } from "@/lib/activity-schedule";
 import { listBattlefields, type Battlefield } from "@/lib/battlefields";
 import { searchCharacters, type Character } from "@/lib/characters";
+import {
+  countDocumentLinksByActivity,
+  listDocumentsForActivity,
+  unlinkDocument,
+  type ActivityDocumentLink,
+} from "@/lib/document-library";
 import { getModuleAccessLevels } from "@/lib/features";
 import { listGuilds, type Guild } from "@/lib/guilds";
 import { uploadMedia } from "@/lib/media-library";
@@ -401,6 +409,7 @@ function FrontCard({
   color,
   front,
   allGuilds,
+  canWrite,
   onAddGuild,
   onRemoveGuild,
   onAddOrganizer,
@@ -409,6 +418,7 @@ function FrontCard({
   color: FrontColor;
   front: FrontAssignments[FrontColor];
   allGuilds: Guild[];
+  canWrite: boolean;
   onAddGuild: (guild: Guild) => void;
   onRemoveGuild: (guildId: number) => void;
   onAddOrganizer: (character: Character) => void;
@@ -467,45 +477,49 @@ function FrontCard({
             className="flex items-center gap-1 rounded-full bg-black/[.05] px-2 py-1 text-xs text-foreground dark:bg-white/[.08]"
           >
             {g.name}
-            <button
-              type="button"
-              onClick={() => onRemoveGuild(g.external_id)}
-              className="text-foreground/50 hover:text-foreground"
-            >
-              <X size={12} />
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => onRemoveGuild(g.external_id)}
+                className="text-foreground/50 hover:text-foreground"
+              >
+                <X size={12} />
+              </button>
+            )}
           </span>
         ))}
         {front.guilds.length === 0 && (
           <span className="text-xs text-foreground/40">Aucune guilde</span>
         )}
       </div>
-      <div className="relative">
-        <input
-          type="text"
-          value={guildQuery}
-          onChange={(e) => setGuildQuery(e.target.value)}
-          placeholder="Rechercher une guilde à ajouter…"
-          className="w-full rounded border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
-        />
-        {guildSuggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/[.08] bg-white shadow-lg dark:border-white/[.145] dark:bg-zinc-800">
-            {guildSuggestions.map((g) => (
-              <button
-                key={g.external_id}
-                type="button"
-                onClick={() => {
-                  onAddGuild(g);
-                  setGuildQuery("");
-                }}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-black/[.04] dark:hover:bg-white/[.08]"
-              >
-                {g.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {canWrite && (
+        <div className="relative">
+          <input
+            type="text"
+            value={guildQuery}
+            onChange={(e) => setGuildQuery(e.target.value)}
+            placeholder="Rechercher une guilde à ajouter…"
+            className="w-full rounded border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+          />
+          {guildSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/[.08] bg-white shadow-lg dark:border-white/[.145] dark:bg-zinc-800">
+              {guildSuggestions.map((g) => (
+                <button
+                  key={g.external_id}
+                  type="button"
+                  onClick={() => {
+                    onAddGuild(g);
+                    setGuildQuery("");
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {front.guilds.length > 0 && (
         <div className="mt-3 border-t border-black/[.08] pt-3 dark:border-white/[.145]">
@@ -522,13 +536,15 @@ function FrontCard({
                   {organizer.name}
                   {organizer.email ? ` — ${organizer.email}` : ""}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onRemoveOrganizer(index)}
-                  className="flex-shrink-0 text-foreground/50 hover:text-foreground"
-                >
-                  <X size={12} />
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveOrganizer(index)}
+                    className="flex-shrink-0 text-foreground/50 hover:text-foreground"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
             ))}
             {front.organizers.length === 0 && (
@@ -538,7 +554,7 @@ function FrontCard({
             )}
           </div>
 
-          {front.organizers.length < maxOrganizers && (
+          {canWrite && front.organizers.length < maxOrganizers && (
             <div className="relative">
               <input
                 type="text"
@@ -579,9 +595,11 @@ function FrontCard({
 
 function ActivityFrontsModal({
   activity,
+  canWrite,
   onClose,
 }: {
   activity: Activity;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [allGuilds, setAllGuilds] = useState<Guild[]>([]);
@@ -723,6 +741,7 @@ function ActivityFrontsModal({
                 color={color}
                 front={assignments[color]}
                 allGuilds={allGuilds}
+                canWrite={canWrite}
                 onAddGuild={(guild) => addGuild(color, guild)}
                 onRemoveGuild={(guildId) => removeGuild(color, guildId)}
                 onAddOrganizer={(character) => addOrganizer(color, character)}
@@ -742,16 +761,18 @@ function ActivityFrontsModal({
             onClick={onClose}
             className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
           >
-            Annuler
+            {canWrite ? "Annuler" : "Fermer"}
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "…" : "Enregistrer"}
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "…" : "Enregistrer"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1190,7 +1211,7 @@ function ChapterForm({
             className="flex items-center gap-2 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
           >
             <MapIcon size={14} />
-            Éditeur de carte
+            Création de carte
           </button>
         </div>
       </div>
@@ -1234,9 +1255,11 @@ function ChapterForm({
 
 function ActivityChaptersModal({
   activity,
+  canWrite,
   onClose,
 }: {
   activity: Activity;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [chapters, setChapters] = useState<ActivityChapter[]>([]);
@@ -1338,27 +1361,29 @@ function ActivityChaptersModal({
               <h2 className="font-semibold text-foreground">
                 Chapitres — {activity.name}
               </h2>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={openImport}
-                  className="flex items-center gap-2 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-                >
-                  <Import size={14} />
-                  Importer un chapitre
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingChapter(null);
-                    setView("form");
-                  }}
-                  className="flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#0c4390]"
-                >
-                  <Plus size={14} />
-                  Ajouter un chapitre
-                </button>
-              </div>
+              {canWrite && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openImport}
+                    className="flex items-center gap-2 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                  >
+                    <Import size={14} />
+                    Importer un chapitre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingChapter(null);
+                      setView("form");
+                    }}
+                    className="flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#0c4390]"
+                  >
+                    <Plus size={14} />
+                    Ajouter un chapitre
+                  </button>
+                </div>
+              )}
             </div>
 
             {isLoading && (
@@ -1388,27 +1413,29 @@ function ActivityChaptersModal({
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingChapter(chapter);
-                          setView("form");
-                        }}
-                        aria-label="Modifier"
-                        className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                      >
-                        <Feather size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(chapter)}
-                        aria-label="Supprimer"
-                        className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {canWrite && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingChapter(chapter);
+                            setView("form");
+                          }}
+                          aria-label="Modifier"
+                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                        >
+                          <Feather size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(chapter)}
+                          aria-label="Supprimer"
+                          className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1686,9 +1713,11 @@ function SortableChapterRow({ row }: { row: ScheduleRow }) {
 
 function ActivityDetailsModal({
   activity,
+  canWrite,
   onClose,
 }: {
   activity: Activity;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<ActivityTab>("variables");
@@ -1805,6 +1834,7 @@ function ActivityDetailsModal({
   }, [activity.id]);
 
   const addScheduleRow = () => {
+    if (!canWrite) return;
     const maxPosition = Math.max(
       -1,
       ...chapters.map((c) => c.position),
@@ -1827,12 +1857,14 @@ function ActivityDetailsModal({
     field: "label" | "startTime" | "endTime",
     value: string,
   ) => {
+    if (!canWrite) return;
     setScheduleRows((prev) =>
       prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)),
     );
   };
 
   const removeScheduleRow = (key: string) => {
+    if (!canWrite) return;
     setScheduleRows((prev) => prev.filter((r) => r.key !== key));
   };
 
@@ -1846,6 +1878,7 @@ function ActivityDetailsModal({
   const combinedSchedule = buildScheduleRows(chapters, scheduleRows);
 
   const handleScheduleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const fromIndex = combinedSchedule.findIndex((r) => r.key === active.id);
@@ -1963,6 +1996,7 @@ function ActivityDetailsModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canWrite) return;
     setError(null);
     setIsSaving(true);
     try {
@@ -2042,31 +2076,33 @@ function ActivityDetailsModal({
           })}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="text-foreground/50">
-            Modèle : contenu réutilisable d&apos;une campagne à l&apos;autre
-            (inscriptions, éléments jeux, nous joindre).
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleLoadTemplate}
-              disabled={isApplyingTemplate}
-              className="flex items-center gap-1 rounded-full border border-black/[.08] px-3 py-1.5 font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            >
-              <Download size={14} />
-              {isApplyingTemplate ? "…" : "Charger le modèle"}
-            </button>
-            <button
-              type="button"
-              onClick={handleApplyVariables}
-              className="flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 font-medium text-white transition-colors hover:bg-[#0c4390]"
-            >
-              <Wand2 size={14} />
-              Intégrer les variables
-            </button>
+        {canWrite && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="text-foreground/50">
+              Modèle : contenu réutilisable d&apos;une campagne à l&apos;autre
+              (inscriptions, éléments jeux, nous joindre).
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleLoadTemplate}
+                disabled={isApplyingTemplate}
+                className="flex items-center gap-1 rounded-full border border-black/[.08] px-3 py-1.5 font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+              >
+                <Download size={14} />
+                {isApplyingTemplate ? "…" : "Charger le modèle"}
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyVariables}
+                className="flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 font-medium text-white transition-colors hover:bg-[#0c4390]"
+              >
+                <Wand2 size={14} />
+                Intégrer les variables
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex-1 overflow-y-auto pr-1">
           {isLoading ? (
@@ -2086,6 +2122,7 @@ function ActivityDetailsModal({
                       Repas dîner
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={mealLunchPrice}
                       onChange={setMealLunchPrice}
                       placeholder="Détailler les infos du dîner"
@@ -2097,6 +2134,7 @@ function ActivityDetailsModal({
                       Repas souper
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={mealDinnerPrice}
                       onChange={setMealDinnerPrice}
                       placeholder="Détailler les infos du souper"
@@ -2108,6 +2146,7 @@ function ActivityDetailsModal({
                       Bonus de participants
                       <input
                         type="text"
+                        disabled={!canWrite}
                         value={bonusParticipants}
                         onChange={(e) => setBonusParticipants(e.target.value)}
                         className={chapterFieldClassName}
@@ -2117,6 +2156,7 @@ function ActivityDetailsModal({
                       Bonus de participants (palier 2)
                       <input
                         type="text"
+                        disabled={!canWrite}
                         value={bonus2Participants}
                         onChange={(e) => setBonus2Participants(e.target.value)}
                         className={chapterFieldClassName}
@@ -2132,6 +2172,7 @@ function ActivityDetailsModal({
                     Texte jeu
                   </label>
                   <RichTextEditor
+                      readOnly={!canWrite}
                     value={gameText}
                     onChange={setGameText}
                     placeholder="Texte jeu de la campagne"
@@ -2150,6 +2191,7 @@ function ActivityDetailsModal({
                       Tarifs
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={registrationParticipantsPricing}
                       onChange={setRegistrationParticipantsPricing}
                       placeholder="Détailler les tarifs"
@@ -2159,6 +2201,7 @@ function ActivityDetailsModal({
                       Pour vous inscrire
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={registrationParticipantsHowto}
                       onChange={setRegistrationParticipantsHowto}
                       placeholder="Détailler la marche à suivre pour s'inscrire"
@@ -2213,6 +2256,7 @@ function ActivityDetailsModal({
                       Tarifs
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={registrationNonParticipantsPricing}
                       onChange={setRegistrationNonParticipantsPricing}
                       placeholder="Détailler les tarifs"
@@ -2222,6 +2266,7 @@ function ActivityDetailsModal({
                       Pour vous inscrire
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={registrationNonParticipantsHowto}
                       onChange={setRegistrationNonParticipantsHowto}
                       placeholder="Détailler la marche à suivre pour s'inscrire"
@@ -2238,6 +2283,7 @@ function ActivityDetailsModal({
                       Texte avant l&apos;horaire
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={scheduleIntro}
                       onChange={setScheduleIntro}
                       placeholder="Introduction affichée avant le tableau"
@@ -2311,14 +2357,16 @@ function ActivityDetailsModal({
                         </tbody>
                       </table>
                     </DndContext>
-                    <button
-                      type="button"
-                      onClick={addScheduleRow}
-                      className="flex items-center gap-1 border-t border-black/[.06] px-3 py-2 text-xs font-medium text-primary hover:underline dark:border-white/[.08]"
-                    >
-                      <Plus size={14} />
-                      Ajouter un bloc (accueil, homologation, dîner…)
-                    </button>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        onClick={addScheduleRow}
+                        className="flex items-center gap-1 border-t border-black/[.06] px-3 py-2 text-xs font-medium text-primary hover:underline dark:border-white/[.08]"
+                      >
+                        <Plus size={14} />
+                        Ajouter un bloc (accueil, homologation, dîner…)
+                      </button>
+                    )}
                   </div>
 
                   <div>
@@ -2326,6 +2374,7 @@ function ActivityDetailsModal({
                       Texte après l&apos;horaire
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={scheduleOutro}
                       onChange={setScheduleOutro}
                       placeholder="Texte affiché après le tableau"
@@ -2342,6 +2391,7 @@ function ActivityDetailsModal({
                       Sécurité
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameSecurity}
                       onChange={setGameSecurity}
                       minHeight="5rem"
@@ -2352,6 +2402,7 @@ function ActivityDetailsModal({
                       États-major
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameStaff}
                       onChange={setGameStaff}
                       minHeight="5rem"
@@ -2362,6 +2413,7 @@ function ActivityDetailsModal({
                       Gains
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameRewards}
                       onChange={setGameRewards}
                       minHeight="5rem"
@@ -2372,6 +2424,7 @@ function ActivityDetailsModal({
                       Règles
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameRules}
                       onChange={setGameRules}
                       minHeight="5rem"
@@ -2382,6 +2435,7 @@ function ActivityDetailsModal({
                       Mort et guérison
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameDeathHealing}
                       onChange={setGameDeathHealing}
                       minHeight="5rem"
@@ -2392,6 +2446,7 @@ function ActivityDetailsModal({
                       Varia
                     </label>
                     <RichTextEditor
+                      readOnly={!canWrite}
                       value={gameVaria}
                       onChange={setGameVaria}
                       minHeight="5rem"
@@ -2406,6 +2461,7 @@ function ActivityDetailsModal({
                     Nous joindre
                   </label>
                   <RichTextEditor
+                      readOnly={!canWrite}
                     value={contactInfo}
                     onChange={setContactInfo}
                     minHeight="8rem"
@@ -2426,15 +2482,17 @@ function ActivityDetailsModal({
             onClick={onClose}
             className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
           >
-            Annuler
+            {canWrite ? "Annuler" : "Fermer"}
           </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "…" : "Enregistrer"}
-          </button>
+          {canWrite && (
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "…" : "Enregistrer"}
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -2517,9 +2575,11 @@ function SortableDocumentBlockRow({
 
 function ActivityDocumentModal({
   activity,
+  canWrite,
   onClose,
 }: {
   activity: Activity;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [chapters, setChapters] = useState<ActivityChapter[]>([]);
@@ -2569,6 +2629,7 @@ function ActivityDocumentModal({
   );
 
   const addStandardBlock = (type: StandardDocumentBlockType) => {
+    if (!canWrite) return;
     setBlocks((prev) => [
       ...prev,
       {
@@ -2583,6 +2644,7 @@ function ActivityDocumentModal({
   };
 
   const addChapterBlock = (chapter: ActivityChapter) => {
+    if (!canWrite) return;
     setBlocks((prev) => [
       ...prev,
       {
@@ -2597,6 +2659,7 @@ function ActivityDocumentModal({
   };
 
   const addTextBlock = () => {
+    if (!canWrite) return;
     setBlocks((prev) => [
       ...prev,
       {
@@ -2611,14 +2674,17 @@ function ActivityDocumentModal({
   };
 
   const removeBlock = (id: string) => {
+    if (!canWrite) return;
     setBlocks((prev) => prev.filter((b) => b.id !== id));
   };
 
   const updateBlockLabel = (id: string, label: string) => {
+    if (!canWrite) return;
     setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, label } : b)));
   };
 
   const updateBlockContent = (id: string, content: string) => {
+    if (!canWrite) return;
     setBlocks((prev) =>
       prev.map((b) => (b.id === id ? { ...b, content } : b)),
     );
@@ -2632,6 +2698,7 @@ function ActivityDocumentModal({
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setBlocks((prev) => {
@@ -2643,6 +2710,7 @@ function ActivityDocumentModal({
   };
 
   const handleSave = async () => {
+    if (!canWrite) return;
     setError(null);
     setIsSaving(true);
     try {
@@ -2655,6 +2723,7 @@ function ActivityDocumentModal({
   };
 
   const handleExport = async () => {
+    if (!canWrite) return;
     setError(null);
     setIsExporting(true);
     try {
@@ -2751,41 +2820,44 @@ function ActivityDocumentModal({
               </SortableContext>
             </DndContext>
 
-            {(missingStandardBlocks.length > 0 ||
-              missingChapters.length > 0) && (
-              <div className="flex flex-wrap items-center gap-2 border-t border-black/[.08] pt-3 dark:border-white/[.08]">
-                <span className="text-xs text-foreground/60">Ajouter :</span>
-                {missingStandardBlocks.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => addStandardBlock(type)}
-                    className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-                  >
-                    + {DOCUMENT_BLOCK_LABELS[type]}
-                  </button>
-                ))}
-                {missingChapters.map((chapter) => (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    onClick={() => addChapterBlock(chapter)}
-                    className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-                  >
-                    + {chapter.title}
-                  </button>
-                ))}
-              </div>
-            )}
+            {canWrite &&
+              (missingStandardBlocks.length > 0 ||
+                missingChapters.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-black/[.08] pt-3 dark:border-white/[.08]">
+                  <span className="text-xs text-foreground/60">Ajouter :</span>
+                  {missingStandardBlocks.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => addStandardBlock(type)}
+                      className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                    >
+                      + {DOCUMENT_BLOCK_LABELS[type]}
+                    </button>
+                  ))}
+                  {missingChapters.map((chapter) => (
+                    <button
+                      key={chapter.id}
+                      type="button"
+                      onClick={() => addChapterBlock(chapter)}
+                      className="rounded-full border border-black/[.08] px-3 py-1 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                    >
+                      + {chapter.title}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-            <button
-              type="button"
-              onClick={addTextBlock}
-              className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            >
-              <Plus size={14} />
-              Ajouter un bloc de texte
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={addTextBlock}
+                className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+              >
+                <Plus size={14} />
+                Ajouter un bloc de texte
+              </button>
+            )}
           </>
         )}
 
@@ -2801,23 +2873,27 @@ function ActivityDocumentModal({
           >
             Fermer
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
-            {isSaving ? "…" : "Enregistrer la structure"}
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={isExporting || isLoading}
-            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <FileText size={14} />
-            {isExporting ? "…" : "Exporter en Word"}
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              {isSaving ? "…" : "Enregistrer la structure"}
+            </button>
+          )}
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={isExporting || isLoading}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <FileText size={14} />
+              {isExporting ? "…" : "Exporter en Word"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -3162,6 +3238,120 @@ function DefaultTemplateModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function LinkedDocumentsModal({
+  activity,
+  canWrite,
+  onClose,
+  onChange,
+}: {
+  activity: Activity;
+  canWrite: boolean;
+  onClose: () => void;
+  onChange: () => void;
+}) {
+  const [links, setLinks] = useState<ActivityDocumentLink[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchLinks = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      setLinks(await listDocumentsForActivity(activity.id));
+    } catch {
+      setError("Impossible de charger les documents liés.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchLinks resolves before the loading flag is cleared
+    fetchLinks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activity.id]);
+
+  const handleUnlink = async (link: ActivityDocumentLink) => {
+    try {
+      await unlinkDocument(link.storage_path);
+      setLinks((prev) =>
+        prev.filter((l) => l.storage_path !== link.storage_path),
+      );
+      onChange();
+    } catch {
+      alert("Échec du délien.");
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <h2 className="font-semibold text-foreground">
+          Documents liés — {activity.name}
+        </h2>
+
+        {isLoading && (
+          <p className="text-sm text-foreground/60">Chargement…</p>
+        )}
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+        {!isLoading && !error && links.length === 0 && (
+          <p className="text-sm text-foreground/60">
+            Aucun document lié pour l&apos;instant. Rends-toi dans Gestion
+            documentaire pour lier un document à cette campagne.
+          </p>
+        )}
+        {!isLoading && !error && links.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {links.map((link) => (
+              <div
+                key={link.storage_path}
+                className="flex items-center justify-between gap-2 rounded-lg border border-black/[.08] p-3 dark:border-white/[.145]"
+              >
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-sm text-foreground hover:underline"
+                >
+                  {link.name}
+                </a>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => handleUnlink(link)}
+                    aria-label="Délier"
+                    className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                  >
+                    <Unlink size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-1 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivitesContent() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -3176,16 +3366,29 @@ function ActivitesContent() {
   const [documentActivity, setDocumentActivity] = useState<Activity | null>(
     null,
   );
+  const [linkedDocumentsActivity, setLinkedDocumentsActivity] =
+    useState<Activity | null>(null);
+  const [documentLinkCounts, setDocumentLinkCounts] = useState<
+    Record<string, number>
+  >({});
   const [isDefaultTemplateOpen, setIsDefaultTemplateOpen] = useState(false);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [searchQuery, setSearchQuery] = useState("");
   const [hasFullAccess, setHasFullAccess] = useState(true);
 
+  const refreshDocumentLinkCounts = () => {
+    countDocumentLinksByActivity().then(setDocumentLinkCounts);
+  };
+
+  useEffect(() => {
+    refreshDocumentLinkCounts();
+  }, []);
+
   useEffect(() => {
     getOwnProfile().then((profile) => {
       if (!profile) return;
       getModuleAccessLevels(profile).then((levels) => {
-        setHasFullAccess(levels["activites"] === "gestionnaire");
+        setHasFullAccess(levels["activites"] === "ecriture");
       });
     });
   }, []);
@@ -3387,6 +3590,22 @@ function ActivitesContent() {
                                 <FileText size={14} />
                                 Document
                               </button>
+                              <button
+                                onClick={() =>
+                                  setLinkedDocumentsActivity(activity)
+                                }
+                                aria-label="Documents liés"
+                                title="Documents liés"
+                                className="relative flex items-center justify-center rounded-full border border-black/[.08] p-1.5 text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <Archive size={14} />
+                                {(documentLinkCounts[activity.id] ?? 0) >
+                                  0 && (
+                                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-white">
+                                    {documentLinkCounts[activity.id]}
+                                  </span>
+                                )}
+                              </button>
                             </div>
                             <div className="flex items-center gap-1">
                               {hasFullAccess && (
@@ -3441,25 +3660,37 @@ function ActivitesContent() {
       {frontsActivity && (
         <ActivityFrontsModal
           activity={frontsActivity}
+          canWrite={hasFullAccess}
           onClose={() => setFrontsActivity(null)}
         />
       )}
       {chaptersActivity && (
         <ActivityChaptersModal
           activity={chaptersActivity}
+          canWrite={hasFullAccess}
           onClose={() => setChaptersActivity(null)}
         />
       )}
       {detailsActivity && (
         <ActivityDetailsModal
           activity={detailsActivity}
+          canWrite={hasFullAccess}
           onClose={() => setDetailsActivity(null)}
         />
       )}
       {documentActivity && (
         <ActivityDocumentModal
           activity={documentActivity}
+          canWrite={hasFullAccess}
           onClose={() => setDocumentActivity(null)}
+        />
+      )}
+      {linkedDocumentsActivity && (
+        <LinkedDocumentsModal
+          activity={linkedDocumentsActivity}
+          canWrite={hasFullAccess}
+          onClose={() => setLinkedDocumentsActivity(null)}
+          onChange={refreshDocumentLinkCounts}
         />
       )}
       {isDefaultTemplateOpen && (
@@ -3469,11 +3700,9 @@ function ActivitesContent() {
   );
 }
 
-const ACTIVITES_PAGE_FEATURES = ["activites", "activites-scenariste"] as const;
-
 export default function ActivitesPage() {
   return (
-    <RequireFeature feature={ACTIVITES_PAGE_FEATURES}>
+    <RequireFeature feature="activites">
       <ActivitesContent />
     </RequireFeature>
   );

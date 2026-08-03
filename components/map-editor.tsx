@@ -13,6 +13,7 @@ import {
   Folder,
   Images,
   Library,
+  Link2,
   Lock,
   LockOpen,
   Menu,
@@ -23,6 +24,8 @@ import {
   Save,
   Slash,
   Trash2,
+  Type as TypeIcon,
+  Unlink,
   X,
   ZoomIn,
   ZoomOut,
@@ -31,14 +34,17 @@ import { useEffect, useRef, useState } from "react";
 import {
   Arrow,
   Circle,
+  Group,
   Image as KonvaImage,
   Layer,
   Line,
   Rect,
   Stage,
+  Text,
   Transformer,
 } from "react-konva";
 import useImage from "use-image";
+import { nugrosBold } from "@/app/fonts/nugros-bold";
 import {
   deleteFolder,
   deleteMedia,
@@ -58,10 +64,12 @@ import {
   type SavedMap,
 } from "@/lib/saved-maps";
 
+const NUGROS_FONT_FAMILY = nugrosBold.style.fontFamily;
+
 type DragShapeKind = "line" | "arrow" | "circle";
 type MapShapeKind = DragShapeKind | "polygon";
 
-type Tool = "select" | "draw" | MapShapeKind;
+type Tool = "select" | "draw" | MapShapeKind | "text";
 
 const SHAPE_TOOLS: DragShapeKind[] = ["line", "arrow", "circle"];
 
@@ -77,6 +85,7 @@ export type OverlayShape = {
   width: number;
   height: number;
   rotation: number;
+  groupId: string | null;
 };
 
 type DrawStyle = "solid" | "dashed";
@@ -92,6 +101,7 @@ export type DrawnLine = {
   rotation: number;
   scaleX: number;
   scaleY: number;
+  groupId: string | null;
 };
 
 export type MapShape = {
@@ -109,6 +119,22 @@ export type MapShape = {
   radius: number;
   fill: string;
   fillOpacity: number;
+  groupId: string | null;
+};
+
+export type TextShape = {
+  id: string;
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  text: string;
+  fontSize: number;
+  fill: string;
+  width: number;
+  height: number;
+  groupId: string | null;
 };
 
 export type CanvasSize = {
@@ -122,6 +148,7 @@ export type MapEditorData = {
   overlays: OverlayShape[];
   lines: DrawnLine[];
   mapShapes: MapShape[];
+  textShapes: TextShape[];
 };
 
 type DragOrigin = {
@@ -134,7 +161,13 @@ const CANVAS_PRESETS: { label: string; width: number; height: number }[] = [
   { label: "1:1 (1000 × 1000)", width: 1000, height: 1000 },
 ];
 
-const DRAW_COLOR_SWATCHES = ["#1c1c1c", "#0e4fa7", "#efb200", "#dc2626"];
+const DRAW_COLOR_SWATCHES = [
+  "#1c1c1c",
+  "#0e4fa7",
+  "#efb200",
+  "#dc2626",
+  "#03b54c",
+];
 const EMPTY_POINTS: number[] = [];
 const LOCAL_ONLY_VALUE = "__local__";
 const DEFAULT_LIBRARY_FOLDER = "elements";
@@ -145,7 +178,7 @@ const OVERLAY_SCALE = 0.25;
 const BACKGROUND_SCALE = 3;
 const WATERMARK_SRC = "/bicolline-logo-white.svg";
 const WATERMARK_MARGIN = 24;
-const WATERMARK_MAX_WIDTH = 90;
+const WATERMARK_MAX_WIDTH = 72;
 const WATERMARK_NATURAL_WIDTH = 233.744;
 const WATERMARK_NATURAL_HEIGHT = 267.476;
 const DEFAULT_BACKGROUND_URL =
@@ -270,6 +303,7 @@ function MediaLibraryPanel({
   currentPath,
   isLoading,
   selectedPaths,
+  canWrite,
   onClose,
   onEnterFolder,
   onGoBack,
@@ -285,6 +319,7 @@ function MediaLibraryPanel({
   currentPath: string;
   isLoading: boolean;
   selectedPaths: string[];
+  canWrite: boolean;
   onClose: () => void;
   onEnterFolder: (path: string) => void;
   onGoBack: () => void;
@@ -329,7 +364,7 @@ function MediaLibraryPanel({
           </button>
         </div>
 
-        {selectedPaths.length > 0 && (
+        {canWrite && selectedPaths.length > 0 && (
           <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2 text-sm">
             <span className="text-black dark:text-zinc-50">
               {selectedPaths.length} sélectionnée(s)
@@ -377,13 +412,15 @@ function MediaLibraryPanel({
                 key={entry.path}
                 className="group relative flex aspect-square flex-col items-center justify-center gap-2 rounded-lg border border-black/[.08] bg-zinc-50 p-4 dark:border-white/[.145] dark:bg-zinc-800"
               >
-                <button
-                  onClick={() => onDeleteFolder(entry)}
-                  aria-label="Supprimer le dossier"
-                  className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <X size={14} />
-                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => onDeleteFolder(entry)}
+                    aria-label="Supprimer le dossier"
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
                 <button
                   onClick={() => onEnterFolder(entry.path)}
                   className="flex flex-col items-center gap-2"
@@ -403,34 +440,40 @@ function MediaLibraryPanel({
                     : "border-black/[.08] dark:border-white/[.145]"
                 }`}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedPaths.includes(entry.path)}
-                  onChange={() => onToggleSelect(entry.path)}
-                  aria-label="Sélectionner cette image"
-                  className="absolute left-1 top-1 z-10 h-4 w-4 cursor-pointer accent-primary"
-                />
+                {canWrite && (
+                  <input
+                    type="checkbox"
+                    checked={selectedPaths.includes(entry.path)}
+                    onChange={() => onToggleSelect(entry.path)}
+                    aria-label="Sélectionner cette image"
+                    className="absolute left-1 top-1 z-10 h-4 w-4 cursor-pointer accent-primary"
+                  />
+                )}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={entry.url}
                   alt=""
                   className="aspect-square w-full bg-zinc-100 object-contain object-center dark:bg-zinc-800"
                 />
-                <button
-                  onClick={() => onDeleteFile(entry)}
-                  aria-label="Supprimer de la banque"
-                  className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <X size={14} />
-                </button>
-                <div className="absolute inset-x-0 bottom-0 bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={() => onAddAsOverlay(entry)}
-                    className="w-full rounded bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white"
-                  >
-                    Ajouter comme calque
-                  </button>
-                </div>
+                {canWrite && (
+                  <>
+                    <button
+                      onClick={() => onDeleteFile(entry)}
+                      aria-label="Supprimer de la banque"
+                      className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      <X size={14} />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-0 bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        onClick={() => onAddAsOverlay(entry)}
+                        className="w-full rounded bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white"
+                      >
+                        Ajouter comme calque
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ),
           )}
@@ -1069,17 +1112,124 @@ function MapShapeItem({
       ref={(node) => setShapeItemRef(shape.id, node)}
       {...common}
       radius={shape.radius}
-      fillEnabled={false}
+      fill={hexToRgba(shape.fill, shape.fillOpacity)}
     />
+  );
+}
+
+function TextShapeItem({
+  shape,
+  selectedIds,
+  draggable,
+  isEditing,
+  onSelect,
+  onChange,
+  onStartEdit,
+  setTextRef,
+  getNode,
+  dragOriginRef,
+  onCommitGroupMove,
+}: {
+  shape: TextShape;
+  selectedIds: string[];
+  draggable: boolean;
+  isEditing: boolean;
+  onSelect: (id: string, additive: boolean) => void;
+  onChange: (attrs: Partial<TextShape>) => void;
+  onStartEdit: () => void;
+  setTextRef: (id: string, node: Konva.Group | null) => void;
+  getNode: (id: string) => Konva.Node | undefined;
+  dragOriginRef: React.RefObject<DragOrigin | null>;
+  onCommitGroupMove: (
+    origins: Map<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void;
+}) {
+  const { onDragStart, onDragMove, onDragEnd } = useGroupDragHandlers({
+    id: shape.id,
+    selectedIds,
+    getNode,
+    dragOriginRef,
+    onCommitGroupMove,
+    onSingleDragEnd: (x, y) => onChange({ x, y }),
+  });
+  const textNodeRef = useRef<Konva.Text>(null);
+
+  return (
+    <Group
+      ref={(node) => setTextRef(shape.id, node)}
+      x={shape.x}
+      y={shape.y}
+      rotation={shape.rotation}
+      scaleX={shape.scaleX}
+      scaleY={shape.scaleY}
+      visible={!isEditing}
+      draggable={draggable}
+      onClick={(e) => {
+        if (!draggable) return;
+        onSelect(shape.id, (e.evt as MouseEvent).shiftKey);
+      }}
+      onTap={() => {
+        if (!draggable) return;
+        onSelect(shape.id, false);
+      }}
+      onDblClick={() => {
+        if (draggable) onStartEdit();
+      }}
+      onDblTap={() => {
+        if (draggable) onStartEdit();
+      }}
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      onTransform={(e) => {
+        // Counteract the live group scale on the text glyphs so resizing the
+        // box never visually changes the font size — only fontSize does.
+        const node = e.target as Konva.Group;
+        textNodeRef.current?.scaleX(1 / node.scaleX());
+        textNodeRef.current?.scaleY(1 / node.scaleY());
+      }}
+      onTransformEnd={(e) => {
+        const node = e.target as Konva.Group;
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+        node.scaleX(1);
+        node.scaleY(1);
+        textNodeRef.current?.scaleX(1);
+        textNodeRef.current?.scaleY(1);
+        onChange({
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          width: Math.max(20, shape.width * scaleX),
+          height: Math.max(10, shape.height * scaleY),
+        });
+      }}
+    >
+      <Rect width={shape.width} height={shape.height} fill="transparent" />
+      <Text
+        ref={textNodeRef}
+        text={shape.text}
+        width={shape.width}
+        height={shape.height}
+        fontSize={shape.fontSize}
+        fontFamily={NUGROS_FONT_FAMILY}
+        fill={shape.fill}
+        listening={false}
+      />
+    </Group>
   );
 }
 
 export default function MapEditor({
   embedded = false,
+  canWrite = true,
   onAttach,
   onCancel,
 }: {
   embedded?: boolean;
+  canWrite?: boolean;
   onAttach?: (result: { name: string; url: string }) => void;
   onCancel?: () => void;
 } = {}) {
@@ -1108,6 +1258,7 @@ export default function MapEditor({
   );
   const [folderChoices, setFolderChoices] = useState<string[]>([]);
   const [zoomMultiplier, setZoomMultiplier] = useState(1);
+  const [zoomInputValue, setZoomInputValue] = useState("100");
   const [containerWidth, setContainerWidth] = useState(800);
   const [viewportHeightBudget, setViewportHeightBudget] = useState(() =>
     typeof window !== "undefined" ? window.innerHeight * 0.7 : 600,
@@ -1117,7 +1268,12 @@ export default function MapEditor({
   const [drawStyle, setDrawStyle] = useState<DrawStyle>("solid");
   const [fillColor, setFillColor] = useState(DRAW_COLOR_SWATCHES[1]);
   const [fillOpacity, setFillOpacity] = useState(0.3);
+  const [textColor, setTextColor] = useState("#000000");
+  const [textFontSize, setTextFontSize] = useState(24);
   const [mapShapes, setMapShapes] = useState<MapShape[]>([]);
+  const [textShapes, setTextShapes] = useState<TextShape[]>([]);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingTextDraft, setEditingTextDraft] = useState("");
 
   const [mapName, setMapName] = useState("");
   const [currentSavedMapId, setCurrentSavedMapId] = useState<string | null>(
@@ -1138,6 +1294,7 @@ export default function MapEditor({
   const shapeRefs = useRef(new Map<string, Konva.Image>());
   const lineRefs = useRef(new Map<string, Konva.Line>());
   const mapShapeRefs = useRef(new Map<string, Konva.Shape>());
+  const textShapeRefs = useRef(new Map<string, Konva.Group>());
   const selectionRectRef = useRef<Konva.Rect>(null);
   const drawingLineRef = useRef<Konva.Line>(null);
   const previewLineRef = useRef<Konva.Line>(null);
@@ -1157,18 +1314,49 @@ export default function MapEditor({
   const getNode = (id: string): Konva.Node | undefined =>
     shapeRefs.current.get(id) ??
     lineRefs.current.get(id) ??
-    mapShapeRefs.current.get(id);
+    mapShapeRefs.current.get(id) ??
+    textShapeRefs.current.get(id);
 
   const getAllLayerEntries = (): [string, Konva.Node][] => [
     ...Array.from(shapeRefs.current.entries()),
     ...Array.from(lineRefs.current.entries()),
     ...Array.from(mapShapeRefs.current.entries()),
+    ...Array.from(textShapeRefs.current.entries()),
   ];
 
   const setMapShapeRef = (id: string, node: Konva.Shape | null) => {
     if (node) mapShapeRefs.current.set(id, node);
     else mapShapeRefs.current.delete(id);
   };
+
+  const setTextShapeRef = (id: string, node: Konva.Group | null) => {
+    if (node) textShapeRefs.current.set(id, node);
+    else textShapeRefs.current.delete(id);
+  };
+
+  const findGroupId = (id: string): string | null =>
+    overlays.find((o) => o.id === id)?.groupId ??
+    lines.find((l) => l.id === id)?.groupId ??
+    mapShapes.find((s) => s.id === id)?.groupId ??
+    textShapes.find((t) => t.id === id)?.groupId ??
+    null;
+
+  const getGroupMembers = (id: string): string[] => {
+    const groupId = findGroupId(id);
+    if (!groupId) return [id];
+    const members: string[] = [];
+    overlays.forEach((o) => o.groupId === groupId && members.push(o.id));
+    lines.forEach((l) => l.groupId === groupId && members.push(l.id));
+    mapShapes.forEach((s) => s.groupId === groupId && members.push(s.id));
+    textShapes.forEach((t) => t.groupId === groupId && members.push(t.id));
+    return members;
+  };
+
+  useEffect(() => {
+    document.fonts.load(`700 24px ${NUGROS_FONT_FAMILY}`).then(() => {
+      textShapeRefs.current.forEach((node) => node.getLayer()?.batchDraw());
+    });
+  }, []);
 
   const hidePreviewShapes = () => {
     previewLineRef.current?.visible(false);
@@ -1237,22 +1425,29 @@ export default function MapEditor({
   useEffect(() => {
     const transformer = transformerRef.current;
     if (!transformer) return;
+    if (editingTextId) {
+      transformer.nodes([]);
+      transformer.getLayer()?.batchDraw();
+      return;
+    }
     const nodes = selectedIds
       .map((id) => getNode(id))
       .filter((node): node is Konva.Node => Boolean(node));
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [selectedIds]);
+  }, [selectedIds, editingTextId]);
 
   const deleteSelectedShapes = () => {
-    if (selectedIds.length === 0) return;
+    if (!canWrite || selectedIds.length === 0) return;
     setOverlays((prev) => prev.filter((o) => !selectedIds.includes(o.id)));
     setLines((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
     setMapShapes((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+    setTextShapes((prev) => prev.filter((t) => !selectedIds.includes(t.id)));
     selectedIds.forEach((id) => {
       shapeRefs.current.delete(id);
       lineRefs.current.delete(id);
       mapShapeRefs.current.delete(id);
+      textShapeRefs.current.delete(id);
     });
     setSelectedIds([]);
   };
@@ -1271,10 +1466,12 @@ export default function MapEditor({
       setOverlays((prev) => prev.filter((o) => !selectedIds.includes(o.id)));
       setLines((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
       setMapShapes((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+      setTextShapes((prev) => prev.filter((t) => !selectedIds.includes(t.id)));
       selectedIds.forEach((id) => {
         shapeRefs.current.delete(id);
         lineRefs.current.delete(id);
         mapShapeRefs.current.delete(id);
+        textShapeRefs.current.delete(id);
       });
       setSelectedIds([]);
     };
@@ -1374,7 +1571,7 @@ export default function MapEditor({
   ) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || !canWrite) return;
 
     setUploadError(null);
     try {
@@ -1393,6 +1590,7 @@ export default function MapEditor({
     files: { url: string }[],
     dropCenter?: { x: number; y: number },
   ) => {
+    if (!canWrite) return;
     const newOverlays: OverlayShape[] = [];
     let cascade = overlays.length;
 
@@ -1419,6 +1617,7 @@ export default function MapEditor({
         width: w,
         height: h,
         rotation: 0,
+        groupId: null,
       });
       cascade += 1;
     }
@@ -1436,7 +1635,7 @@ export default function MapEditor({
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || !canWrite) return;
 
     const defaultName = file.name.replace(/\.zip$/i, "");
     const folderName = window.prompt("Nom du sous-dossier :", defaultName);
@@ -1471,7 +1670,7 @@ export default function MapEditor({
 
   const handleCanvasDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     const url = e.dataTransfer.getData("text/plain");
-    if (!url) return;
+    if (!url || !canWrite) return;
     e.preventDefault();
     const stage = stageRef.current;
     if (!stage) return;
@@ -1482,6 +1681,7 @@ export default function MapEditor({
   };
 
   const handleDeleteFile = async (file: MediaFile) => {
+    if (!canWrite) return;
     try {
       await deleteMedia(file.path);
       await refreshLibrary();
@@ -1491,6 +1691,7 @@ export default function MapEditor({
   };
 
   const handleDeleteFolder = async (folder: MediaFolder) => {
+    if (!canWrite) return;
     try {
       await deleteFolder(folder.path);
       await refreshLibrary();
@@ -1531,7 +1732,7 @@ export default function MapEditor({
   };
 
   const handleBulkDeleteMedia = async () => {
-    if (selectedMediaPaths.length === 0) return;
+    if (!canWrite || selectedMediaPaths.length === 0) return;
     try {
       await Promise.all(selectedMediaPaths.map((path) => deleteMedia(path)));
       setSelectedMediaPaths([]);
@@ -1557,12 +1758,16 @@ export default function MapEditor({
     );
   };
 
-  const handleOverlaySelect = (id: string, additive: boolean) => {
+  const handleShapeSelect = (id: string, additive: boolean) => {
+    const members = getGroupMembers(id);
     setSelectedIds((prev) => {
       if (additive) {
-        return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+        const allSelected = members.every((m) => prev.includes(m));
+        return allSelected
+          ? prev.filter((x) => !members.includes(x))
+          : Array.from(new Set([...prev, ...members]));
       }
-      return [id];
+      return members;
     });
   };
 
@@ -1592,35 +1797,83 @@ export default function MapEditor({
         return { ...s, x: start.x + dx, y: start.y + dy };
       }),
     );
+    setTextShapes((prev) =>
+      prev.map((t) => {
+        const start = origins.get(t.id);
+        if (!start) return t;
+        return { ...t, x: start.x + dx, y: start.y + dy };
+      }),
+    );
   };
 
   const handleDuplicate = () => {
-    if (selectedIds.length === 0) return;
+    if (!canWrite || selectedIds.length === 0) return;
     const offset = 20;
     const newOverlayShapes: OverlayShape[] = [];
     const newLineShapes: DrawnLine[] = [];
     const newMapShapes: MapShape[] = [];
+    const newTextShapes: TextShape[] = [];
     const newIds: string[] = [];
+    const groupIdMap = new Map<string, string>();
+    const remapGroupId = (groupId: string | null): string | null => {
+      if (!groupId) return null;
+      const existing = groupIdMap.get(groupId);
+      if (existing) return existing;
+      const next = crypto.randomUUID();
+      groupIdMap.set(groupId, next);
+      return next;
+    };
 
     overlays.forEach((o) => {
       if (selectedIds.includes(o.id)) {
         const id = crypto.randomUUID();
         newIds.push(id);
-        newOverlayShapes.push({ ...o, id, x: o.x + offset, y: o.y + offset });
+        newOverlayShapes.push({
+          ...o,
+          id,
+          x: o.x + offset,
+          y: o.y + offset,
+          groupId: remapGroupId(o.groupId),
+        });
       }
     });
     lines.forEach((l) => {
       if (selectedIds.includes(l.id)) {
         const id = crypto.randomUUID();
         newIds.push(id);
-        newLineShapes.push({ ...l, id, x: l.x + offset, y: l.y + offset });
+        newLineShapes.push({
+          ...l,
+          id,
+          x: l.x + offset,
+          y: l.y + offset,
+          groupId: remapGroupId(l.groupId),
+        });
       }
     });
     mapShapes.forEach((s) => {
       if (selectedIds.includes(s.id)) {
         const id = crypto.randomUUID();
         newIds.push(id);
-        newMapShapes.push({ ...s, id, x: s.x + offset, y: s.y + offset });
+        newMapShapes.push({
+          ...s,
+          id,
+          x: s.x + offset,
+          y: s.y + offset,
+          groupId: remapGroupId(s.groupId),
+        });
+      }
+    });
+    textShapes.forEach((t) => {
+      if (selectedIds.includes(t.id)) {
+        const id = crypto.randomUUID();
+        newIds.push(id);
+        newTextShapes.push({
+          ...t,
+          id,
+          x: t.x + offset,
+          y: t.y + offset,
+          groupId: remapGroupId(t.groupId),
+        });
       }
     });
 
@@ -1631,13 +1884,108 @@ export default function MapEditor({
       setLines((prev) => [...prev, ...newLineShapes]);
     if (newMapShapes.length > 0)
       setMapShapes((prev) => [...prev, ...newMapShapes]);
+    if (newTextShapes.length > 0)
+      setTextShapes((prev) => [...prev, ...newTextShapes]);
     setSelectedIds(newIds);
+  };
+
+  const handleLinkSelection = () => {
+    if (!canWrite || selectedIds.length < 2) return;
+    const groupId = crypto.randomUUID();
+    setOverlays((prev) =>
+      prev.map((o) => (selectedIds.includes(o.id) ? { ...o, groupId } : o)),
+    );
+    setLines((prev) =>
+      prev.map((l) => (selectedIds.includes(l.id) ? { ...l, groupId } : l)),
+    );
+    setMapShapes((prev) =>
+      prev.map((s) => (selectedIds.includes(s.id) ? { ...s, groupId } : s)),
+    );
+    setTextShapes((prev) =>
+      prev.map((t) => (selectedIds.includes(t.id) ? { ...t, groupId } : t)),
+    );
+  };
+
+  const handleUnlinkSelection = () => {
+    if (!canWrite || selectedIds.length === 0) return;
+    setOverlays((prev) =>
+      prev.map((o) =>
+        selectedIds.includes(o.id) ? { ...o, groupId: null } : o,
+      ),
+    );
+    setLines((prev) =>
+      prev.map((l) =>
+        selectedIds.includes(l.id) ? { ...l, groupId: null } : l,
+      ),
+    );
+    setMapShapes((prev) =>
+      prev.map((s) =>
+        selectedIds.includes(s.id) ? { ...s, groupId: null } : s,
+      ),
+    );
+    setTextShapes((prev) =>
+      prev.map((t) =>
+        selectedIds.includes(t.id) ? { ...t, groupId: null } : t,
+      ),
+    );
+  };
+
+  const selectionHasGroupedShape = selectedIds.some(
+    (id) => findGroupId(id) !== null,
+  );
+
+  const selectedTextShape =
+    tool === "select" && selectedIds.length === 1
+      ? textShapes.find((t) => t.id === selectedIds[0])
+      : undefined;
+
+  useEffect(() => {
+    if (!editingTextId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the edit draft from the shape being opened for editing
+    setEditingTextDraft(
+      textShapes.find((t) => t.id === editingTextId)?.text ?? "",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingTextId]);
+
+  const commitTextEdit = () => {
+    if (!editingTextId) return;
+    const id = editingTextId;
+    const value = editingTextDraft.trim() || "Texte";
+    setTextShapes((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, text: value } : t)),
+    );
+    setEditingTextId(null);
+  };
+
+  const cancelTextEdit = () => setEditingTextId(null);
+
+  const handleTextShapeChange = (id: string, attrs: Partial<TextShape>) => {
+    setTextShapes((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...attrs } : t)),
+    );
   };
 
   const zoomStage = (factor: number) => {
     setZoomMultiplier((prev) =>
       Math.min(MAX_STAGE_SCALE, Math.max(MIN_STAGE_SCALE, prev * factor)),
     );
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps the zoom input display in sync when zoom changes via buttons/wheel
+    setZoomInputValue(String(Math.round(zoomMultiplier * 100)));
+  }, [zoomMultiplier]);
+
+  const commitZoomInput = () => {
+    const parsed = parseFloat(zoomInputValue);
+    if (Number.isFinite(parsed)) {
+      setZoomMultiplier(
+        Math.min(MAX_STAGE_SCALE, Math.max(MIN_STAGE_SCALE, parsed / 100)),
+      );
+    } else {
+      setZoomInputValue(String(Math.round(zoomMultiplier * 100)));
+    }
   };
 
   const applyCanvasSize = (width: number, height: number) => {
@@ -1689,6 +2037,7 @@ export default function MapEditor({
           rotation: 0,
           scaleX: 1,
           scaleY: 1,
+          groupId: null,
         },
       ]);
     }
@@ -1748,6 +2097,7 @@ export default function MapEditor({
       scaleY: 1,
       fill: fillColor,
       fillOpacity,
+      groupId: null,
     };
 
     let newShape: MapShape | null = null;
@@ -1827,6 +2177,7 @@ export default function MapEditor({
           radius: 0,
           fill: fillColor,
           fillOpacity,
+          groupId: null,
         },
       ]);
     }
@@ -1877,6 +2228,30 @@ export default function MapEditor({
       } else {
         startPolygon(pos);
       }
+      return;
+    }
+
+    if (tool === "text") {
+      if (!canWrite) return;
+      const id = crypto.randomUUID();
+      const newText: TextShape = {
+        id,
+        x: pos.x,
+        y: pos.y,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
+        text: "Texte",
+        fontSize: textFontSize,
+        fill: textColor,
+        width: 200,
+        height: Math.round(textFontSize * 1.4),
+        groupId: null,
+      };
+      setTextShapes((prev) => [...prev, newText]);
+      setSelectedIds([id]);
+      setEditingTextId(id);
+      setTool("select");
       return;
     }
 
@@ -1985,7 +2360,18 @@ export default function MapEditor({
             matches.push(s.id);
           }
         });
-        setSelectedIds(matches);
+        textShapes.forEach((t) => {
+          const node = textShapeRefs.current.get(t.id);
+          if (!node) return;
+          if (Konva.Util.haveIntersection(box, node.getClientRect())) {
+            matches.push(t.id);
+          }
+        });
+        const expanded = new Set<string>();
+        matches.forEach((id) =>
+          getGroupMembers(id).forEach((m) => expanded.add(m)),
+        );
+        setSelectedIds(Array.from(expanded));
       }
     }
   };
@@ -2058,30 +2444,41 @@ export default function MapEditor({
       overlays: persistedOverlays,
       lines,
       mapShapes,
+      textShapes,
     };
   };
 
   const loadProjectData = (data: MapEditorData) => {
     setBackgroundSrc(data.backgroundSrc);
     setCanvasSize(data.canvasSize);
-    setOverlays(data.overlays);
-    setLines(data.lines);
-    setMapShapes(data.mapShapes);
+    setOverlays((data.overlays ?? []).map((o) => ({ ...o, groupId: o.groupId ?? null })));
+    setLines((data.lines ?? []).map((l) => ({ ...l, groupId: l.groupId ?? null })));
+    setMapShapes((data.mapShapes ?? []).map((s) => ({ ...s, groupId: s.groupId ?? null })));
+    setTextShapes(
+      (data.textShapes ?? []).map((t) => ({
+        ...t,
+        groupId: t.groupId ?? null,
+        height: t.height ?? Math.round(t.fontSize * 1.4),
+      })),
+    );
     setSelectedIds([]);
   };
 
   const handleNewMap = () => {
+    if (!canWrite) return;
     setBackgroundSrc(DEFAULT_BACKGROUND_URL);
     setCanvasSize({ width: 1200, height: 800 });
     setOverlays([]);
     setLines([]);
     setMapShapes([]);
+    setTextShapes([]);
     setSelectedIds([]);
     setMapName("");
     setCurrentSavedMapId(null);
   };
 
   const handleSaveMap = async () => {
+    if (!canWrite) return;
     const name = mapName.trim();
     if (!name) {
       setUploadError("Donne un nom à la carte avant de l'enregistrer.");
@@ -2132,6 +2529,7 @@ export default function MapEditor({
   };
 
   const handleRenameSavedMap = async (map: SavedMap) => {
+    if (!canWrite) return;
     const name = window.prompt("Nom de la carte :", map.name);
     if (!name || name === map.name) return;
     try {
@@ -2150,6 +2548,7 @@ export default function MapEditor({
   };
 
   const handleDeleteSavedMap = async (map: SavedMap) => {
+    if (!canWrite) return;
     if (!window.confirm(`Supprimer la carte "${map.name}" ?`)) return;
     try {
       await deleteSavedMap(map.id);
@@ -2161,7 +2560,7 @@ export default function MapEditor({
   };
 
   const handleAttach = async () => {
-    if (!onAttach) return;
+    if (!onAttach || !canWrite) return;
     setIsAttaching(true);
     setUploadError(null);
     try {
@@ -2184,10 +2583,12 @@ export default function MapEditor({
   };
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 bg-background px-6 py-4 font-sans">
+    <div
+      className={`flex flex-1 flex-col items-center gap-6 bg-background px-6 py-4 font-sans ${nugrosBold.variable}`}
+    >
       {embedded && (
         <div className="flex w-full max-w-[1200px] items-center justify-between">
-          <h2 className="font-semibold text-foreground">Éditeur de carte</h2>
+          <h2 className="font-semibold text-foreground">Création de carte</h2>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -2196,15 +2597,17 @@ export default function MapEditor({
             >
               Annuler
             </button>
-            <button
-              type="button"
-              onClick={handleAttach}
-              disabled={isAttaching}
-              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Check size={16} />
-              {isAttaching ? "…" : "Joindre au chapitre"}
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={handleAttach}
+                disabled={isAttaching}
+                className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check size={16} />
+                {isAttaching ? "…" : "Joindre au chapitre"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2214,8 +2617,10 @@ export default function MapEditor({
           value={mapName}
           onChange={(e) => setMapName(e.target.value)}
           placeholder="Nom de la carte"
-          className="rounded-full border border-black/[.08] bg-white px-4 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-900"
+          disabled={!canWrite}
+          className="rounded-full border border-black/[.08] bg-white px-4 py-2 text-sm text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-900"
         />
+        {canWrite && (
         <div ref={uploadMenuRef} className="relative">
           <button
             type="button"
@@ -2272,6 +2677,7 @@ export default function MapEditor({
             </div>
           )}
         </div>
+        )}
 
         <button
           onClick={() => {
@@ -2301,14 +2707,16 @@ export default function MapEditor({
         </div>
 
         <div className="flex flex-nowrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleNewMap}
-            className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
-            <FilePlus size={16} />
-            Nouvelle carte
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleNewMap}
+              className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              <FilePlus size={16} />
+              Nouvelle carte
+            </button>
+          )}
 
           <button
             type="button"
@@ -2319,15 +2727,17 @@ export default function MapEditor({
             Mes cartes
           </button>
 
-          <button
-            type="button"
-            onClick={handleSaveMap}
-            disabled={isSavingMap}
-            className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
-            <Save size={16} />
-            {isSavingMap ? "…" : "Enregistrer"}
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleSaveMap}
+              disabled={isSavingMap}
+              className="flex items-center gap-2 whitespace-nowrap rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              <Save size={16} />
+              {isSavingMap ? "…" : "Enregistrer"}
+            </button>
+          )}
 
           <button
             onClick={handleExport}
@@ -2342,109 +2752,8 @@ export default function MapEditor({
         <p className="text-sm text-red-600 dark:text-red-400">{uploadError}</p>
       )}
 
-      {(tool === "draw" || isShapeKind(tool) || tool === "polygon") && (
-        <div className="flex w-full max-w-[1200px] flex-wrap items-center gap-4 rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-zinc-900">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-600 dark:text-zinc-400">Couleur</span>
-            {DRAW_COLOR_SWATCHES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setDrawColor(c)}
-                aria-label={`Couleur ${c}`}
-                className={`h-6 w-6 rounded-full border-2 ${
-                  drawColor === c ? "border-primary" : "border-transparent"
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-            <input
-              type="color"
-              value={drawColor}
-              onChange={(e) => setDrawColor(e.target.value)}
-              aria-label="Couleur personnalisée"
-              className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-600 dark:text-zinc-400">Style</span>
-            <select
-              value={drawStyle}
-              onChange={(e) => setDrawStyle(e.target.value as DrawStyle)}
-              className="rounded border border-black/[.08] bg-white px-2 py-1 dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50"
-            >
-              <option value="solid">Plein</option>
-              <option value="dashed">Pointillé</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-600 dark:text-zinc-400">Épaisseur</span>
-            <input
-              type="range"
-              min={1}
-              max={20}
-              value={drawWidth}
-              onChange={(e) => setDrawWidth(Number(e.target.value))}
-              className="w-32"
-            />
-            <span className="w-6 text-right text-zinc-600 dark:text-zinc-400">
-              {drawWidth}
-            </span>
-          </div>
-
-          {tool === "polygon" && (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-600 dark:text-zinc-400">
-                  Remplissage
-                </span>
-                {DRAW_COLOR_SWATCHES.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setFillColor(c)}
-                    aria-label={`Couleur de remplissage ${c}`}
-                    className={`h-6 w-6 rounded-full border-2 ${
-                      fillColor === c ? "border-primary" : "border-transparent"
-                    }`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={fillColor}
-                  onChange={(e) => setFillColor(e.target.value)}
-                  aria-label="Couleur de remplissage personnalisée"
-                  className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-600 dark:text-zinc-400">
-                  Opacité du remplissage
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={fillOpacity}
-                  onChange={(e) => setFillOpacity(Number(e.target.value))}
-                  className="w-32"
-                />
-                <span className="w-10 text-right text-zinc-600 dark:text-zinc-400">
-                  {Math.round(fillOpacity * 100)}%
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="flex w-full max-w-[1200px] items-start justify-center gap-4">
-        <div className="flex flex-col gap-2 rounded-xl border border-black/[.08] bg-white p-2 dark:border-white/[.145] dark:bg-zinc-900">
+      <div className="flex w-full max-w-[1200px] flex-col items-center gap-4">
+        <div className="flex w-full flex-wrap items-center justify-center gap-2 rounded-xl border border-black/[.08] bg-white p-2 dark:border-white/[.145] dark:bg-zinc-900">
           <ToolbarButton
             label={
               pinLayersToBackground
@@ -2460,7 +2769,7 @@ export default function MapEditor({
               <LockOpen size={18} />
             )}
           </ToolbarButton>
-          <div className="my-1 h-px bg-black/[.08] dark:bg-white/[.145]" />
+          <div className="mx-1 h-6 w-px bg-black/[.08] dark:bg-white/[.145]" />
           <ToolbarButton
             label="Sélectionner"
             active={tool === "select"}
@@ -2468,74 +2777,341 @@ export default function MapEditor({
           >
             <MousePointer2 size={18} />
           </ToolbarButton>
-          <ToolbarButton
-            label="Dessiner un tracé"
-            active={tool === "draw"}
-            onClick={() => handleSetTool("draw")}
-          >
-            <Pencil size={18} />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Ligne"
-            active={tool === "line"}
-            onClick={() => handleSetTool("line")}
-          >
-            <Slash size={18} />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Flèche"
-            active={tool === "arrow"}
-            onClick={() => handleSetTool("arrow")}
-          >
-            <ArrowUpRight size={18} />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Polygone"
-            active={tool === "polygon"}
-            onClick={() => handleSetTool("polygon")}
-          >
-            <Pentagon size={18} />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Cercle"
-            active={tool === "circle"}
-            onClick={() => handleSetTool("circle")}
-          >
-            <CircleIcon size={18} />
-          </ToolbarButton>
-          <div className="my-1 h-px bg-black/[.08] dark:bg-white/[.145]" />
+          {canWrite && (
+            <>
+              <ToolbarButton
+                label="Dessiner un tracé"
+                active={tool === "draw"}
+                onClick={() => handleSetTool("draw")}
+              >
+                <Pencil size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Ligne"
+                active={tool === "line"}
+                onClick={() => handleSetTool("line")}
+              >
+                <Slash size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Flèche"
+                active={tool === "arrow"}
+                onClick={() => handleSetTool("arrow")}
+              >
+                <ArrowUpRight size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Polygone"
+                active={tool === "polygon"}
+                onClick={() => handleSetTool("polygon")}
+              >
+                <Pentagon size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Cercle"
+                active={tool === "circle"}
+                onClick={() => handleSetTool("circle")}
+              >
+                <CircleIcon size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Texte"
+                active={tool === "text"}
+                onClick={() => handleSetTool("text")}
+              >
+                <TypeIcon size={18} />
+              </ToolbarButton>
+            </>
+          )}
+          <div className="mx-1 h-6 w-px bg-black/[.08] dark:bg-white/[.145]" />
           <ToolbarButton label="Zoomer" onClick={() => zoomStage(1.2)}>
             <ZoomIn size={18} />
           </ToolbarButton>
-          <div
-            className="select-none text-center text-xs font-medium text-zinc-500 dark:text-zinc-400"
+          <input
+            type="number"
+            min={Math.round(MIN_STAGE_SCALE * 100)}
+            max={Math.round(MAX_STAGE_SCALE * 100)}
+            value={zoomInputValue}
+            onChange={(e) => setZoomInputValue(e.target.value)}
+            onBlur={commitZoomInput}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            aria-label="Niveau de zoom en pourcentage"
             title="Niveau de zoom du plan de travail"
-          >
-            {Math.round(zoomMultiplier * 100)}%
-          </div>
+            className="w-10 rounded border border-black/[.08] bg-white py-0.5 text-center text-xs font-medium text-zinc-600 [appearance:textfield] dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-400 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
           <ToolbarButton label="Dézoomer" onClick={() => zoomStage(1 / 1.2)}>
             <ZoomOut size={18} />
           </ToolbarButton>
-          <div className="my-1 h-px bg-black/[.08] dark:bg-white/[.145]" />
-          <ToolbarButton
-            label="Dupliquer la sélection"
-            onClick={handleDuplicate}
-            disabled={selectedIds.length === 0}
-          >
-            <Copy size={18} />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Supprimer la sélection"
-            onClick={deleteSelectedShapes}
-            disabled={selectedIds.length === 0}
-          >
-            <Trash2 size={18} />
-          </ToolbarButton>
+          {canWrite && (
+            <>
+              <div className="mx-1 h-6 w-px bg-black/[.08] dark:bg-white/[.145]" />
+              <ToolbarButton
+                label="Dupliquer la sélection"
+                onClick={handleDuplicate}
+                disabled={selectedIds.length === 0}
+              >
+                <Copy size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Supprimer la sélection"
+                onClick={deleteSelectedShapes}
+                disabled={selectedIds.length === 0}
+              >
+                <Trash2 size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Lier la sélection"
+                onClick={handleLinkSelection}
+                disabled={selectedIds.length < 2}
+              >
+                <Link2 size={18} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Délier la sélection"
+                onClick={handleUnlinkSelection}
+                disabled={!selectionHasGroupedShape}
+              >
+                <Unlink size={18} />
+              </ToolbarButton>
+            </>
+          )}
         </div>
 
-        <div ref={stageContainerRef} className="w-full max-w-[900px]">
+        {(tool === "draw" ||
+          isShapeKind(tool) ||
+          tool === "polygon" ||
+          tool === "text" ||
+          selectedTextShape) && (
+          <div className="flex w-full max-w-[1200px] flex-wrap items-center gap-4 rounded-xl border border-black/[.08] bg-white p-3 text-sm dark:border-white/[.145] dark:bg-zinc-900">
+            {selectedTextShape && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Couleur du texte sélectionné
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleTextShapeChange(selectedTextShape.id, {
+                        fill: "#000000",
+                      })
+                    }
+                    aria-label="Noir"
+                    className={`h-6 w-6 rounded-full border-2 ${
+                      selectedTextShape.fill === "#000000"
+                        ? "border-primary"
+                        : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: "#000000" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleTextShapeChange(selectedTextShape.id, {
+                        fill: "#ffffff",
+                      })
+                    }
+                    aria-label="Blanc"
+                    className={`h-6 w-6 rounded-full border-2 ${
+                      selectedTextShape.fill === "#ffffff"
+                        ? "border-primary"
+                        : "border-zinc-300 dark:border-white/[.3]"
+                    }`}
+                    style={{ backgroundColor: "#ffffff" }}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Taille du texte sélectionné
+                  </span>
+                  <input
+                    type="range"
+                    min={10}
+                    max={72}
+                    value={selectedTextShape.fontSize}
+                    onChange={(e) =>
+                      handleTextShapeChange(selectedTextShape.id, {
+                        fontSize: Number(e.target.value),
+                      })
+                    }
+                    className="w-32"
+                  />
+                  <span className="w-6 text-right text-zinc-600 dark:text-zinc-400">
+                    {selectedTextShape.fontSize}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {(tool === "draw" || isShapeKind(tool) || tool === "polygon") && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Couleur
+                  </span>
+                  {DRAW_COLOR_SWATCHES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setDrawColor(c)}
+                      aria-label={`Couleur ${c}`}
+                      className={`h-6 w-6 rounded-full border-2 ${
+                        drawColor === c
+                          ? "border-primary"
+                          : "border-transparent"
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={drawColor}
+                    onChange={(e) => setDrawColor(e.target.value)}
+                    aria-label="Couleur personnalisée"
+                    className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Style
+                  </span>
+                  <select
+                    value={drawStyle}
+                    onChange={(e) => setDrawStyle(e.target.value as DrawStyle)}
+                    className="rounded border border-black/[.08] bg-white px-2 py-1 dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50"
+                  >
+                    <option value="solid">Plein</option>
+                    <option value="dashed">Pointillé</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Épaisseur
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={20}
+                    value={drawWidth}
+                    onChange={(e) => setDrawWidth(Number(e.target.value))}
+                    className="w-32"
+                  />
+                  <span className="w-6 text-right text-zinc-600 dark:text-zinc-400">
+                    {drawWidth}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {tool === "text" && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Couleur du texte
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setTextColor("#000000")}
+                    aria-label="Noir"
+                    className={`h-6 w-6 rounded-full border-2 ${
+                      textColor === "#000000"
+                        ? "border-primary"
+                        : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: "#000000" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTextColor("#ffffff")}
+                    aria-label="Blanc"
+                    className={`h-6 w-6 rounded-full border-2 ${
+                      textColor === "#ffffff"
+                        ? "border-primary"
+                        : "border-zinc-300 dark:border-white/[.3]"
+                    }`}
+                    style={{ backgroundColor: "#ffffff" }}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Taille
+                  </span>
+                  <input
+                    type="range"
+                    min={10}
+                    max={72}
+                    value={textFontSize}
+                    onChange={(e) => setTextFontSize(Number(e.target.value))}
+                    className="w-32"
+                  />
+                  <span className="w-6 text-right text-zinc-600 dark:text-zinc-400">
+                    {textFontSize}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {(tool === "polygon" || tool === "circle") && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Remplissage
+                  </span>
+                  {DRAW_COLOR_SWATCHES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setFillColor(c)}
+                      aria-label={`Couleur de remplissage ${c}`}
+                      className={`h-6 w-6 rounded-full border-2 ${
+                        fillColor === c
+                          ? "border-primary"
+                          : "border-transparent"
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={fillColor}
+                    onChange={(e) => setFillColor(e.target.value)}
+                    aria-label="Couleur de remplissage personnalisée"
+                    className="h-6 w-8 cursor-pointer rounded border border-black/[.08] bg-transparent dark:border-white/[.145]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    Opacité du remplissage
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={fillOpacity}
+                    onChange={(e) => setFillOpacity(Number(e.target.value))}
+                    className="w-32"
+                  />
+                  <span className="w-10 text-right text-zinc-600 dark:text-zinc-400">
+                    {Math.round(fillOpacity * 100)}%
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="flex w-full items-start justify-center gap-4">
+        <div ref={stageContainerRef} className="min-w-0 flex-1">
           <div
-            className="mx-auto overflow-hidden rounded border border-zinc-300 bg-white dark:border-zinc-700"
+            className="relative mx-auto overflow-hidden rounded border border-zinc-300 bg-white dark:border-zinc-700"
             style={{ width: displayWidth, height: displayHeight }}
             onDragOver={handleCanvasDragOver}
             onDrop={handleCanvasDrop}
@@ -2568,7 +3144,7 @@ export default function MapEditor({
                   <BackgroundImage
                     src={backgroundSrc}
                     imageRef={bgImageRef}
-                    draggable={tool === "select"}
+                    draggable={canWrite && tool === "select"}
                     canvasSize={canvasSize}
                     pinLayers={pinLayersToBackground}
                     getAllLayerEntries={getAllLayerEntries}
@@ -2580,8 +3156,8 @@ export default function MapEditor({
                     key={shape.id}
                     shape={shape}
                     selectedIds={selectedIds}
-                    draggable={tool === "select"}
-                    onSelect={handleOverlaySelect}
+                    draggable={canWrite && tool === "select"}
+                    onSelect={handleShapeSelect}
                     onChange={(attrs) => handleOverlayChange(shape.id, attrs)}
                     setShapeRef={setShapeRef}
                     getNode={getNode}
@@ -2594,8 +3170,8 @@ export default function MapEditor({
                     key={line.id}
                     shape={line}
                     selectedIds={selectedIds}
-                    draggable={tool === "select"}
-                    onSelect={handleOverlaySelect}
+                    draggable={canWrite && tool === "select"}
+                    onSelect={handleShapeSelect}
                     onChange={(attrs) => handleLineChange(line.id, attrs)}
                     setLineRef={setLineRef}
                     getNode={getNode}
@@ -2608,10 +3184,26 @@ export default function MapEditor({
                     key={shape.id}
                     shape={shape}
                     selectedIds={selectedIds}
-                    draggable={tool === "select"}
-                    onSelect={handleOverlaySelect}
+                    draggable={canWrite && tool === "select"}
+                    onSelect={handleShapeSelect}
                     onChange={(attrs) => handleMapShapeChange(shape.id, attrs)}
                     setShapeItemRef={setMapShapeRef}
+                    getNode={getNode}
+                    dragOriginRef={dragOriginRef}
+                    onCommitGroupMove={handleCommitGroupMove}
+                  />
+                ))}
+                {textShapes.map((shape) => (
+                  <TextShapeItem
+                    key={shape.id}
+                    shape={shape}
+                    selectedIds={selectedIds}
+                    draggable={canWrite && tool === "select"}
+                    isEditing={editingTextId === shape.id}
+                    onSelect={handleShapeSelect}
+                    onChange={(attrs) => handleTextShapeChange(shape.id, attrs)}
+                    onStartEdit={() => canWrite && setEditingTextId(shape.id)}
+                    setTextRef={setTextShapeRef}
                     getNode={getNode}
                     dragOriginRef={dragOriginRef}
                     onCommitGroupMove={handleCommitGroupMove}
@@ -2643,7 +3235,7 @@ export default function MapEditor({
                   stroke={drawColor}
                   strokeWidth={drawWidth}
                   dash={getDashPattern(drawStyle, drawWidth)}
-                  fillEnabled={false}
+                  fill={hexToRgba(fillColor, fillOpacity)}
                   visible={false}
                   listening={false}
                 />
@@ -2701,6 +3293,48 @@ export default function MapEditor({
                 />
               </Layer>
             </Stage>
+            {editingTextId &&
+              (() => {
+                const shape = textShapes.find((t) => t.id === editingTextId);
+                if (!shape) return null;
+                return (
+                  <textarea
+                    autoFocus
+                    value={editingTextDraft}
+                    onChange={(e) => setEditingTextDraft(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onBlur={commitTextEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        commitTextEdit();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelTextEdit();
+                      }
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: stagePosX + shape.x * totalStageScale,
+                      top: stagePosY + shape.y * totalStageScale,
+                      width: shape.width * totalStageScale,
+                      fontSize: shape.fontSize * totalStageScale,
+                      fontFamily: NUGROS_FONT_FAMILY,
+                      color: shape.fill,
+                      lineHeight: 1.2,
+                      transform: `rotate(${shape.rotation}deg)`,
+                      transformOrigin: "top left",
+                      border: "1px dashed #0e4fa7",
+                      padding: 0,
+                      margin: 0,
+                      background: "white",
+                      resize: "none",
+                      overflow: "hidden",
+                      zIndex: 20,
+                    }}
+                  />
+                );
+              })()}
           </div>
         </div>
 
@@ -2711,6 +3345,7 @@ export default function MapEditor({
           onEnterFolder={handleEnterFolder}
           onGoBack={handleGoBackInLibrary}
         />
+        </div>
       </div>
 
       <p className="max-w-2xl text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -2729,6 +3364,7 @@ export default function MapEditor({
           currentPath={libraryPath}
           isLoading={isLoadingLibrary}
           selectedPaths={selectedMediaPaths}
+          canWrite={canWrite}
           onClose={() => {
             setIsLibraryOpen(false);
             setSelectedMediaPaths([]);
@@ -2759,6 +3395,7 @@ export default function MapEditor({
           maps={savedMaps}
           isLoading={isLoadingSavedMaps}
           canAttach={Boolean(onAttach)}
+          canWrite={canWrite}
           onClose={() => setIsSavedMapsOpen(false)}
           onLoad={handleLoadSavedMap}
           onRename={handleRenameSavedMap}
@@ -2774,6 +3411,7 @@ function SavedMapsPanel({
   maps,
   isLoading,
   canAttach,
+  canWrite,
   onClose,
   onLoad,
   onRename,
@@ -2783,6 +3421,7 @@ function SavedMapsPanel({
   maps: SavedMap[];
   isLoading: boolean;
   canAttach: boolean;
+  canWrite: boolean;
   onClose: () => void;
   onLoad: (map: SavedMap) => void;
   onRename: (map: SavedMap) => void;
@@ -2847,34 +3486,36 @@ function SavedMapsPanel({
               <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
                 {map.name}
               </span>
-              <div className="flex items-center justify-between gap-1">
-                <button
-                  type="button"
-                  onClick={() => onRename(map)}
-                  aria-label="Renommer"
-                  className="rounded p-1 text-zinc-500 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
-                >
-                  <Pencil size={14} />
-                </button>
-                {canAttach && (
+              {canWrite && (
+                <div className="flex items-center justify-between gap-1">
                   <button
                     type="button"
-                    onClick={() => onAttach(map)}
-                    aria-label="Joindre au chapitre"
-                    className="rounded p-1 text-primary hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                    onClick={() => onRename(map)}
+                    aria-label="Renommer"
+                    className="rounded p-1 text-zinc-500 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
                   >
-                    <Paperclip size={14} />
+                    <Pencil size={14} />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onDelete(map)}
-                  aria-label="Supprimer"
-                  className="rounded p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+                  {canAttach && (
+                    <button
+                      type="button"
+                      onClick={() => onAttach(map)}
+                      aria-label="Joindre au chapitre"
+                      className="rounded p-1 text-primary hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+                    >
+                      <Paperclip size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(map)}
+                    aria-label="Supprimer"
+                    className="rounded p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
