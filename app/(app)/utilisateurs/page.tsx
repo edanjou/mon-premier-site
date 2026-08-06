@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
+import { sendPasswordResetEmail } from "@/lib/auth-email";
 import {
   collectModules,
   ecritureKey,
@@ -506,9 +507,7 @@ export default function UtilisateursPage() {
   const handleSendResetLink = async (user: AdminUser) => {
     if (!user.email) return;
     setSendingLinkId(user.id);
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+    const { error } = await sendPasswordResetEmail(user.email);
     setSendingLinkId(null);
     if (error) {
       alert("Échec de l'envoi du lien.");

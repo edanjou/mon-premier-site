@@ -26,6 +26,7 @@ import {
   ChevronUp,
   ClipboardList,
   Clock,
+  Cross,
   Download,
   Feather,
   FileStack,
@@ -33,16 +34,20 @@ import {
   FlagTriangleRight,
   GripVertical,
   Import,
+  ListChecks,
   Map as MapIcon,
   Phone,
+  PocketKnife,
   Plus,
   RefreshCw,
   Search,
+  Shield,
   Swords,
   Ticket,
   Trash2,
   Unlink,
   Upload,
+  Users,
   Variable,
   Wand2,
   X,
@@ -51,9 +56,13 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
 import Breadcrumb from "@/components/breadcrumb";
+import MarechalTasksPanel from "@/components/marechal-tasks-panel";
+import MarechalTeamPanel from "@/components/marechal-team-panel";
+import MedicTeamPanel from "@/components/medic-team-panel";
 import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
 import RichTextEditor from "@/components/rich-text-editor";
+import WeaponMasterTeamPanel from "@/components/weapon-master-team-panel";
 import {
   getActivityDetailTemplate,
   saveActivityDetailTemplate,
@@ -122,9 +131,25 @@ import {
 } from "@/lib/document-library";
 import { getModuleAccessLevels } from "@/lib/features";
 import { listGuilds, type Guild } from "@/lib/guilds";
+import {
+  listCampaignTeamAssignedCounts,
+  listMarechaux,
+  listNonCampaignTeamStatusCounts,
+  type Marechal,
+} from "@/lib/marechaux";
+import {
+  listMedicActivityStatusCounts,
+  listMedics,
+  type Medic,
+} from "@/lib/medics";
 import { uploadMedia } from "@/lib/media-library";
 import { getOwnProfile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
+import {
+  listWeaponMasterActivityStatusCounts,
+  listWeaponMasters,
+  type WeaponMaster,
+} from "@/lib/weapon-masters";
 
 const MapEditor = dynamic(() => import("@/components/map-editor"), {
   ssr: false,
@@ -1340,7 +1365,9 @@ function ActivityChaptersModal({
     if (!q) return true;
     return (
       c.title.toLowerCase().includes(q) ||
-      c.activity_name.toLowerCase().includes(q)
+      c.activity_name.toLowerCase().includes(q) ||
+      formatActivityDate(c.activity_date).toLowerCase().includes(q) ||
+      c.battlefields.some((b) => b.name.toLowerCase().includes(q))
     );
   });
 
@@ -1475,7 +1502,7 @@ function ActivityChaptersModal({
                 type="text"
                 value={libraryQuery}
                 onChange={(e) => setLibraryQuery(e.target.value)}
-                placeholder="Rechercher par titre ou campagne…"
+                placeholder="Rechercher par titre, campagne, date ou champ de bataille…"
                 className="w-full rounded-full border border-black/[.08] bg-white py-2 pl-9 pr-3 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
               />
             </div>
@@ -1500,8 +1527,14 @@ function ActivityChaptersModal({
                         {chapter.title}
                       </p>
                       <p className="text-xs text-foreground/60">
-                        {chapter.activity_name}
+                        {chapter.activity_name} ·{" "}
+                        {formatActivityDate(chapter.activity_date)}
                       </p>
+                      {chapter.battlefields.length > 0 && (
+                        <p className="text-xs text-foreground/50">
+                          {chapter.battlefields.map((b) => b.name).join(", ")}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -3352,6 +3385,181 @@ function LinkedDocumentsModal({
   );
 }
 
+type PageTab = "campagnes" | "marechaux" | "medics" | "weapon-masters";
+
+const PAGE_TABS: { key: PageTab; label: string; icon: typeof Swords }[] = [
+  { key: "campagnes", label: "Campagnes", icon: Swords },
+  { key: "marechaux", label: "Maréchaux", icon: PocketKnife },
+  { key: "medics", label: "Médics", icon: Cross },
+  { key: "weapon-masters", label: "Maîtres d'armes", icon: Shield },
+];
+
+function MarechalTeamModal({
+  activity,
+  marechaux,
+  canWrite,
+  onClose,
+}: {
+  activity: Activity;
+  marechaux: Marechal[];
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">{activity.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <MarechalTeamPanel
+          activity={activity}
+          marechaux={marechaux}
+          canWrite={canWrite}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MarechalTasksModal({
+  activity,
+  marechaux,
+  canWrite,
+  onClose,
+}: {
+  activity: Activity;
+  marechaux: Marechal[];
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-6xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">
+            Tâches — {activity.name}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <MarechalTasksPanel
+          activity={activity}
+          marechaux={marechaux}
+          canWrite={canWrite}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MedicTeamModal({
+  activity,
+  medics,
+  canWrite,
+  onClose,
+}: {
+  activity: Activity;
+  medics: Medic[];
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">{activity.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <MedicTeamPanel activity={activity} medics={medics} canWrite={canWrite} />
+      </div>
+    </div>
+  );
+}
+
+function WeaponMasterTeamModal({
+  activity,
+  weaponMasters,
+  canWrite,
+  onClose,
+}: {
+  activity: Activity;
+  weaponMasters: WeaponMaster[];
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">{activity.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <WeaponMasterTeamPanel
+          activity={activity}
+          weaponMasters={weaponMasters}
+          canWrite={canWrite}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ActivitesContent() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -3375,6 +3583,32 @@ function ActivitesContent() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [searchQuery, setSearchQuery] = useState("");
   const [hasFullAccess, setHasFullAccess] = useState(true);
+  const [tab, setTab] = useState<PageTab>("campagnes");
+  const [marechaux, setMarechaux] = useState<Marechal[]>([]);
+  const [marechalCounts, setMarechalCounts] = useState<
+    Record<string, { available: number; assigned: number }>
+  >({});
+  const [campaignTeamCounts, setCampaignTeamCounts] = useState<
+    Record<string, number>
+  >({});
+  const [isMarechalLoading, setIsMarechalLoading] = useState(true);
+  const [teamActivity, setTeamActivity] = useState<Activity | null>(null);
+  const [tasksActivity, setTasksActivity] = useState<Activity | null>(null);
+  const [medics, setMedics] = useState<Medic[]>([]);
+  const [medicCounts, setMedicCounts] = useState<
+    Record<string, { available: number; assigned: number }>
+  >({});
+  const [isMedicLoading, setIsMedicLoading] = useState(true);
+  const [medicTeamActivity, setMedicTeamActivity] = useState<Activity | null>(
+    null,
+  );
+  const [weaponMasters, setWeaponMasters] = useState<WeaponMaster[]>([]);
+  const [weaponMasterCounts, setWeaponMasterCounts] = useState<
+    Record<string, { available: number; assigned: number }>
+  >({});
+  const [isWeaponMasterLoading, setIsWeaponMasterLoading] = useState(true);
+  const [weaponMasterTeamActivity, setWeaponMasterTeamActivity] =
+    useState<Activity | null>(null);
 
   const refreshDocumentLinkCounts = () => {
     countDocumentLinksByActivity().then(setDocumentLinkCounts);
@@ -3383,6 +3617,47 @@ function ActivitesContent() {
   useEffect(() => {
     refreshDocumentLinkCounts();
   }, []);
+
+  useEffect(() => {
+    if (tab !== "marechaux") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sets a loading flag ahead of an async fetch
+    setIsMarechalLoading(true);
+    Promise.all([
+      listMarechaux(),
+      listNonCampaignTeamStatusCounts(),
+      listCampaignTeamAssignedCounts(),
+    ])
+      .then(([marechalList, counts, teamCounts]) => {
+        setMarechaux(marechalList);
+        setMarechalCounts(counts);
+        setCampaignTeamCounts(teamCounts);
+      })
+      .finally(() => setIsMarechalLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "medics") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sets a loading flag ahead of an async fetch
+    setIsMedicLoading(true);
+    Promise.all([listMedics(), listMedicActivityStatusCounts()])
+      .then(([medicList, counts]) => {
+        setMedics(medicList);
+        setMedicCounts(counts);
+      })
+      .finally(() => setIsMedicLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "weapon-masters") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sets a loading flag ahead of an async fetch
+    setIsWeaponMasterLoading(true);
+    Promise.all([listWeaponMasters(), listWeaponMasterActivityStatusCounts()])
+      .then(([weaponMasterList, counts]) => {
+        setWeaponMasters(weaponMasterList);
+        setWeaponMasterCounts(counts);
+      })
+      .finally(() => setIsWeaponMasterLoading(false));
+  }, [tab]);
 
   useEffect(() => {
     getOwnProfile().then((profile) => {
@@ -3458,7 +3733,30 @@ function ActivitesContent() {
       </h1>
       <Breadcrumb />
 
-      <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <div className="mt-6 flex gap-2 border-b border-black/[.08] dark:border-white/[.08]">
+        {PAGE_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+                tab === t.key
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              <Icon size={16} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+        {tab === "campagnes" && (
+          <>
         {isLoading && <p className="text-sm text-foreground/60">Chargement…</p>}
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -3642,6 +3940,209 @@ function ActivitesContent() {
             )}
           </>
         )}
+          </>
+        )}
+
+        {tab === "marechaux" && (
+          <>
+            {isMarechalLoading && (
+              <p className="text-sm text-foreground/60">Chargement…</p>
+            )}
+            {!isMarechalLoading && activities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune campagne pour l&apos;instant.
+              </p>
+            )}
+            {!isMarechalLoading && activities.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                      <th className="py-2 pr-4 font-medium">Nom</th>
+                      <th className="py-2 pr-4 font-medium">Date</th>
+                      <th className="py-2 pr-4 font-medium">Disponibles</th>
+                      <th className="py-2 pr-4 font-medium">Assignés</th>
+                      <th className="py-2 pr-4 font-medium">
+                        Équipe campagne
+                      </th>
+                      <th className="py-2 pr-4 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activities]
+                      .sort((a, b) => a.date.localeCompare(b.date))
+                      .map((activity) => (
+                        <tr
+                          key={activity.id}
+                          className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
+                        >
+                          <td className="py-2 pr-4 text-foreground">
+                            {activity.name}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {formatActivityDate(activity.date)}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {marechalCounts[activity.id]?.available ?? 0}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {marechalCounts[activity.id]?.assigned ?? 0} /{" "}
+                            {activity.marshal_count ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {campaignTeamCounts[activity.id] ?? 0} /{" "}
+                            {activity.campaign_team_count ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => setTeamActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <Users size={14} />
+                                Gérer l&apos;équipe
+                              </button>
+                              <button
+                                onClick={() => setTasksActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <ListChecks size={14} />
+                                Tâches
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "medics" && (
+          <>
+            {isMedicLoading && (
+              <p className="text-sm text-foreground/60">Chargement…</p>
+            )}
+            {!isMedicLoading && activities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune campagne pour l&apos;instant.
+              </p>
+            )}
+            {!isMedicLoading && activities.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                      <th className="py-2 pr-4 font-medium">Nom</th>
+                      <th className="py-2 pr-4 font-medium">Date</th>
+                      <th className="py-2 pr-4 font-medium">Disponibles</th>
+                      <th className="py-2 pr-4 font-medium">Assignés</th>
+                      <th className="py-2 pr-4 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activities]
+                      .sort((a, b) => a.date.localeCompare(b.date))
+                      .map((activity) => (
+                        <tr
+                          key={activity.id}
+                          className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
+                        >
+                          <td className="py-2 pr-4 text-foreground">
+                            {activity.name}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {formatActivityDate(activity.date)}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {medicCounts[activity.id]?.available ?? 0}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {medicCounts[activity.id]?.assigned ?? 0} /{" "}
+                            {activity.healer_count ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <button
+                              onClick={() => setMedicTeamActivity(activity)}
+                              className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                            >
+                              <Cross size={14} />
+                              Gérer
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "weapon-masters" && (
+          <>
+            {isWeaponMasterLoading && (
+              <p className="text-sm text-foreground/60">Chargement…</p>
+            )}
+            {!isWeaponMasterLoading && activities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune campagne pour l&apos;instant.
+              </p>
+            )}
+            {!isWeaponMasterLoading && activities.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                      <th className="py-2 pr-4 font-medium">Nom</th>
+                      <th className="py-2 pr-4 font-medium">Date</th>
+                      <th className="py-2 pr-4 font-medium">Disponibles</th>
+                      <th className="py-2 pr-4 font-medium">Assignés</th>
+                      <th className="py-2 pr-4 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activities]
+                      .sort((a, b) => a.date.localeCompare(b.date))
+                      .map((activity) => (
+                        <tr
+                          key={activity.id}
+                          className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
+                        >
+                          <td className="py-2 pr-4 text-foreground">
+                            {activity.name}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {formatActivityDate(activity.date)}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {weaponMasterCounts[activity.id]?.available ?? 0}
+                          </td>
+                          <td className="py-2 pr-4 text-foreground/80">
+                            {weaponMasterCounts[activity.id]?.assigned ?? 0} /{" "}
+                            {activity.weapon_master_count ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <button
+                              onClick={() =>
+                                setWeaponMasterTeamActivity(activity)
+                              }
+                              className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                            >
+                              <Shield size={14} />
+                              Gérer
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {isCreateOpen && (
@@ -3695,6 +4196,38 @@ function ActivitesContent() {
       )}
       {isDefaultTemplateOpen && (
         <DefaultTemplateModal onClose={() => setIsDefaultTemplateOpen(false)} />
+      )}
+      {teamActivity && (
+        <MarechalTeamModal
+          activity={teamActivity}
+          marechaux={marechaux}
+          canWrite={hasFullAccess}
+          onClose={() => setTeamActivity(null)}
+        />
+      )}
+      {tasksActivity && (
+        <MarechalTasksModal
+          activity={tasksActivity}
+          marechaux={marechaux}
+          canWrite={hasFullAccess}
+          onClose={() => setTasksActivity(null)}
+        />
+      )}
+      {medicTeamActivity && (
+        <MedicTeamModal
+          activity={medicTeamActivity}
+          medics={medics}
+          canWrite={hasFullAccess}
+          onClose={() => setMedicTeamActivity(null)}
+        />
+      )}
+      {weaponMasterTeamActivity && (
+        <WeaponMasterTeamModal
+          activity={weaponMasterTeamActivity}
+          weaponMasters={weaponMasters}
+          canWrite={hasFullAccess}
+          onClose={() => setWeaponMasterTeamActivity(null)}
+        />
       )}
     </div>
   );

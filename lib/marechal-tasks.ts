@@ -94,6 +94,7 @@ export async function createMarechalTask(input: {
   label: string;
   task_type_id: string | null;
   is_ramassage: boolean;
+  assigned_marechal_id?: string | null;
 }): Promise<MarechalTask> {
   const { data: lowest } = await supabase
     .from("marechal_tasks")

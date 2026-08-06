@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { sendPasswordResetEmail } from "@/lib/auth-email";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginForm() {
@@ -35,9 +36,7 @@ export default function LoginForm() {
     setIsLoading(true);
 
     if (mode === "forgot") {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
+      const { error } = await sendPasswordResetEmail(email);
       setIsLoading(false);
       if (error) {
         setError("Impossible d'envoyer l'email de réinitialisation.");

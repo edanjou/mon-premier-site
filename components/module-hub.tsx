@@ -97,7 +97,7 @@ function SortableHubCard({
       onKeyDown={(e) => {
         if (e.key === "Enter") router.push(item.href);
       }}
-      className={`group flex cursor-grab touch-none items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing dark:bg-zinc-900 ${
+      className={`group flex cursor-grab touch-none items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing dark:border dark:border-white/60 dark:bg-zinc-900 ${
         isDragging ? "z-10 opacity-50" : ""
       }`}
     >
@@ -125,7 +125,7 @@ function PinnedHubCard({ item }: { item: HubItem }) {
       }}
       role="button"
       tabIndex={0}
-      className="group flex cursor-pointer items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:bg-zinc-900"
+      className="group flex cursor-pointer items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border dark:border-white/60 dark:bg-zinc-900"
     >
       <div className="icon-badge-hover flex h-[55px] w-[55px] flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
         <Icon size={25} className="group-hover:animate-wiggle" />
@@ -142,7 +142,7 @@ function PinnedHubCard({ item }: { item: HubItem }) {
 function DisabledHubCard({ item }: { item: HubItem }) {
   const Icon = item.icon;
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-white p-5 opacity-50 shadow-sm dark:bg-zinc-900">
+    <div className="flex items-center gap-3 rounded-2xl bg-white p-5 opacity-50 shadow-sm dark:border dark:border-white/60 dark:bg-zinc-900">
       <div className="flex h-[55px] w-[55px] flex-shrink-0 items-center justify-center rounded-full bg-foreground/20 text-foreground/60">
         <Icon size={25} />
       </div>
@@ -260,7 +260,7 @@ export default function ModuleHub({
             items={activeItems.map((i) => i.href)}
             strategy={rectSortingStrategy}
           >
-            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {activeItems.map((item) => (
                 <SortableHubCard
                   key={item.href}

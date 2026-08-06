@@ -1,7 +1,7 @@
 import type { Battlefield } from "@/lib/battlefields";
 import { supabase } from "@/lib/supabase";
 
-export const CHAPTER_HEALING_MODES = ["Sabliers", "Puits de guérison"] as const;
+export { CHAPTER_HEALING_MODES } from "@/lib/activity-chapters";
 
 export type ChapterObjective = {
   id: string;
@@ -18,9 +18,9 @@ export type ChapterObjectiveInput = {
   position: number;
 };
 
-export type ActivityChapter = {
+export type GrandeBatailleChapter = {
   id: string;
-  activity_id: string;
+  grande_bataille_id: string;
   title: string;
   game_text: string | null;
   terrain_limits: string | null;
@@ -38,13 +38,8 @@ export type ActivityChapter = {
   objectives: ChapterObjective[];
 };
 
-export type ActivityChapterWithActivity = ActivityChapter & {
-  activity_name: string;
-  activity_date: string;
-};
-
-export type ActivityChapterInput = {
-  activity_id: string;
+export type GrandeBatailleChapterInput = {
+  grande_bataille_id: string;
   title: string;
   game_text: string | null;
   terrain_limits: string | null;
@@ -84,50 +79,25 @@ function normalizeObjectives(
 }
 
 const CHAPTER_SELECT =
-  "*, activity_chapter_battlefields(battlefields(id, name)), activity_chapter_objectives(id, description, rewards_detail, percentage, position)";
+  "*, grande_bataille_chapter_battlefields(battlefields(id, name)), grande_bataille_chapter_objectives(id, description, rewards_detail, percentage, position)";
 
-export async function listActivityChapters(
-  activityId: string,
-): Promise<ActivityChapter[]> {
+export async function listGrandeBatailleChapters(
+  grandeBatailleId: string,
+): Promise<GrandeBatailleChapter[]> {
   const { data, error } = await supabase
-    .from("activity_chapters")
+    .from("grande_bataille_chapters")
     .select(CHAPTER_SELECT)
-    .eq("activity_id", activityId)
+    .eq("grande_bataille_id", grandeBatailleId)
     .order("position", { ascending: true });
 
   if (error) throw error;
   return (data ?? []).map((row) => ({
     ...row,
-    battlefields: normalizeBattlefields(row.activity_chapter_battlefields),
-    objectives: normalizeObjectives(row.activity_chapter_objectives),
+    battlefields: normalizeBattlefields(
+      row.grande_bataille_chapter_battlefields,
+    ),
+    objectives: normalizeObjectives(row.grande_bataille_chapter_objectives),
   }));
-}
-
-export async function listAllActivityChapters(): Promise<
-  ActivityChapterWithActivity[]
-> {
-  const { data, error } = await supabase
-    .from("activity_chapters")
-    .select(`${CHAPTER_SELECT}, activities(name, date)`)
-    .order("title", { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []).map((row) => {
-    const activities = row.activities as
-      | { name: string; date: string }
-      | { name: string; date: string }[]
-      | null;
-    const activityInfo = Array.isArray(activities)
-      ? (activities[0] ?? null)
-      : activities;
-    return {
-      ...row,
-      activity_name: activityInfo?.name ?? "",
-      activity_date: activityInfo?.date ?? "",
-      battlefields: normalizeBattlefields(row.activity_chapter_battlefields),
-      objectives: normalizeObjectives(row.activity_chapter_objectives),
-    };
-  });
 }
 
 async function linkBattlefields(
@@ -135,12 +105,14 @@ async function linkBattlefields(
   battlefieldIds: string[],
 ): Promise<void> {
   if (battlefieldIds.length === 0) return;
-  const { error } = await supabase.from("activity_chapter_battlefields").insert(
-    battlefieldIds.map((battlefield_id) => ({
-      chapter_id: chapterId,
-      battlefield_id,
-    })),
-  );
+  const { error } = await supabase
+    .from("grande_bataille_chapter_battlefields")
+    .insert(
+      battlefieldIds.map((battlefield_id) => ({
+        chapter_id: chapterId,
+        battlefield_id,
+      })),
+    );
   if (error) throw error;
 }
 
@@ -149,24 +121,26 @@ async function saveObjectives(
   objectives: ChapterObjectiveInput[],
 ): Promise<void> {
   if (objectives.length === 0) return;
-  const { error } = await supabase.from("activity_chapter_objectives").insert(
-    objectives.map((o) => ({
-      chapter_id: chapterId,
-      description: o.description,
-      rewards_detail: o.rewards_detail,
-      percentage: o.percentage,
-      position: o.position,
-    })),
-  );
+  const { error } = await supabase
+    .from("grande_bataille_chapter_objectives")
+    .insert(
+      objectives.map((o) => ({
+        chapter_id: chapterId,
+        description: o.description,
+        rewards_detail: o.rewards_detail,
+        percentage: o.percentage,
+        position: o.position,
+      })),
+    );
   if (error) throw error;
 }
 
-export async function createActivityChapter(
-  input: ActivityChapterInput,
+export async function createGrandeBatailleChapter(
+  input: GrandeBatailleChapterInput,
 ): Promise<string> {
   const { battlefield_ids, objective_inputs, ...rest } = input;
   const { data, error } = await supabase
-    .from("activity_chapters")
+    .from("grande_bataille_chapters")
     .insert(rest)
     .select("id")
     .single();
@@ -177,51 +151,29 @@ export async function createActivityChapter(
   return data.id;
 }
 
-export async function updateActivityChapter(
+export async function updateGrandeBatailleChapter(
   id: string,
-  input: ActivityChapterInput,
+  input: GrandeBatailleChapterInput,
 ): Promise<void> {
   const { battlefield_ids, objective_inputs, ...rest } = input;
   const { error } = await supabase
-    .from("activity_chapters")
+    .from("grande_bataille_chapters")
     .update(rest)
     .eq("id", id);
   if (error) throw error;
 
   const { error: deleteLinksError } = await supabase
-    .from("activity_chapter_battlefields")
+    .from("grande_bataille_chapter_battlefields")
     .delete()
     .eq("chapter_id", id);
   if (deleteLinksError) throw deleteLinksError;
 
   const { error: deleteObjectivesError } = await supabase
-    .from("activity_chapter_objectives")
+    .from("grande_bataille_chapter_objectives")
     .delete()
     .eq("chapter_id", id);
   if (deleteObjectivesError) throw deleteObjectivesError;
 
   await linkBattlefields(id, battlefield_ids);
   await saveObjectives(id, objective_inputs);
-}
-
-export async function deleteActivityChapter(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("activity_chapters")
-    .delete()
-    .eq("id", id);
-  if (error) throw error;
-}
-
-export async function updateChapterPositions(
-  updates: { id: string; position: number }[],
-): Promise<void> {
-  await Promise.all(
-    updates.map(async ({ id, position }) => {
-      const { error } = await supabase
-        .from("activity_chapters")
-        .update({ position })
-        .eq("id", id);
-      if (error) throw error;
-    }),
-  );
 }

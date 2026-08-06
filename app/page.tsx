@@ -17,7 +17,7 @@ export default function Home() {
         <h1
           className={`${glofters.className} text-[40px] leading-[0.8] font-semibold tracking-[2px] text-foreground`}
         >
-          Coordination Combat
+          Duché de Bicolline
         </h1>
         <LoginForm />
       </main>

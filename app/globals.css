@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #eae7e1;
   --foreground: #1c1c1c;
@@ -29,19 +31,17 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1c1c1c;
-    --foreground: #f2f4f3;
-  }
+:root.dark {
+  --background: #1c1c1c;
+  --foreground: #f2f4f3;
 }
 
-:where(button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button), aside a) {
+:where(button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button), aside a) {
   position: relative;
   isolation: isolate;
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button)::before,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button)::before,
 aside a::before {
   content: "";
   position: absolute;
@@ -54,12 +54,12 @@ aside a::before {
   pointer-events: none;
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):hover::before,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):hover::before,
 aside a:hover::before {
   clip-path: circle(150% at 50% 100%);
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):hover,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):hover,
 aside a:hover {
   color: #1c1c1c;
 }
@@ -124,8 +124,33 @@ body {
   color: color-mix(in srgb, currentColor 70%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-  .prose-editor blockquote {
-    border-left-color: rgba(255, 255, 255, 0.2);
+:root.dark .prose-editor blockquote {
+  border-left-color: rgba(255, 255, 255, 0.2);
+}
+
+::view-transition-old(.fade-out) {
+  animation: 200ms ease-in both fade-out;
+}
+
+::view-transition-new(.fade-in) {
+  animation: 200ms ease-out both fade-in;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
   }
 }

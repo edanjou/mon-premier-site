@@ -1,4 +1,6 @@
 import {
+  AlignmentType,
+  BorderStyle,
   Document,
   HeadingLevel,
   ImageRun,
@@ -9,7 +11,6 @@ import {
   TableRow,
   TextRun,
   WidthType,
-  type IParagraphOptions,
 } from "docx";
 import type { Activity } from "@/lib/activities";
 import type { ActivityChapter } from "@/lib/activity-chapters";
@@ -21,11 +22,47 @@ import {
 } from "@/lib/activity-fronts";
 import type { ScheduleRow } from "@/lib/activity-schedule";
 
+const DOC_FONT = "EB Garamond";
+
+const COLORS = {
+  ink: "2A1A0F",
+  brown: "8B5A2B",
+  brownDark: "6B4423",
+  muted: "8A7660",
+  calloutBg: "F3E9DA",
+  calloutBorder: "C9A876",
+};
+
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+
+type HeadingTier = 1 | 2 | 3 | 4;
+
+const HEADING_STYLE: Record<
+  HeadingTier,
+  { color: string; size: number; allCaps?: boolean }
+> = {
+  1: { color: COLORS.ink, size: 34 },
+  2: { color: COLORS.brown, size: 26 },
+  3: { color: COLORS.ink, size: 22, allCaps: true },
+  4: { color: COLORS.brown, size: 20, allCaps: true },
+};
+
+const HEADING_LEVEL: Record<HeadingTier, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
+  1: HeadingLevel.HEADING_1,
+  2: HeadingLevel.HEADING_2,
+  3: HeadingLevel.HEADING_3,
+  4: HeadingLevel.HEADING_4,
+};
+
 type RunStyle = {
   bold?: boolean;
   italics?: boolean;
   underline?: Record<string, never>;
   strike?: boolean;
+  color?: string;
+  size?: number;
+  allCaps?: boolean;
+  characterSpacing?: number;
 };
 
 function collectRuns(node: Element, style: RunStyle): TextRun[] {
@@ -54,14 +91,40 @@ function collectRuns(node: Element, style: RunStyle): TextRun[] {
   return runs;
 }
 
-function blockParagraph(
-  el: Element,
-  extra: Omit<IParagraphOptions, "children" | "text"> = {},
-) {
+function blockParagraph(el: Element): Paragraph {
   const runs = collectRuns(el, {});
   return new Paragraph({
     children: runs.length ? runs : [new TextRun("")],
-    ...extra,
+    alignment: AlignmentType.JUSTIFIED,
+    spacing: { after: 160 },
+  });
+}
+
+function calloutParagraph(el: Element): Paragraph {
+  const runs = collectRuns(el, {});
+  return new Paragraph({
+    shading: { fill: COLORS.calloutBg },
+    border: {
+      left: { style: BorderStyle.SINGLE, color: COLORS.calloutBorder, size: 18, space: 8 },
+    },
+    indent: { left: 40 },
+    spacing: { before: 120, after: 160 },
+    children: runs.length ? runs : [new TextRun("")],
+  });
+}
+
+function headingParagraph(el: Element, tier: HeadingTier): Paragraph {
+  const style = HEADING_STYLE[tier];
+  const runs = collectRuns(el, { bold: true, ...style });
+  return new Paragraph({
+    heading: HEADING_LEVEL[tier],
+    alignment: tier === 1 ? AlignmentType.CENTER : undefined,
+    border:
+      tier === 2
+        ? { bottom: { style: BorderStyle.SINGLE, color: COLORS.brown, size: 6, space: 4 } }
+        : undefined,
+    spacing: { before: tier === 1 ? 360 : 260, after: tier === 2 ? 160 : 140 },
+    children: runs.length ? runs : [new TextRun({ text: "", ...style })],
   });
 }
 
@@ -77,13 +140,25 @@ function htmlToParagraphs(html: string | null | undefined): Paragraph[] {
       Array.from(el.children).forEach((li, index) => {
         if (li.tagName.toLowerCase() !== "li") return;
         if (tag === "ul") {
-          paragraphs.push(blockParagraph(li, { bullet: { level: 0 } }));
+          const runs = collectRuns(li, {});
+          paragraphs.push(
+            new Paragraph({
+              indent: { left: 360, hanging: 260 },
+              spacing: { after: 80 },
+              alignment: AlignmentType.JUSTIFIED,
+              children: [
+                new TextRun({ text: "◆  ", color: COLORS.brown, bold: true }),
+                ...runs,
+              ],
+            }),
+          );
         } else {
           const runs = collectRuns(li, {});
           paragraphs.push(
             new Paragraph({
               children: [new TextRun(`${index + 1}. `), ...runs],
               indent: { left: 360 },
+              spacing: { after: 80 },
             }),
           );
         }
@@ -92,19 +167,14 @@ function htmlToParagraphs(html: string | null | undefined): Paragraph[] {
     }
 
     if (tag === "blockquote") {
-      paragraphs.push(blockParagraph(el, { indent: { left: 720 } }));
+      paragraphs.push(calloutParagraph(el));
       return;
     }
 
     if (/^h[1-6]$/.test(tag)) {
       const level = Number(tag[1]);
-      const heading =
-        level === 1
-          ? HeadingLevel.HEADING_1
-          : level === 2
-            ? HeadingLevel.HEADING_2
-            : HeadingLevel.HEADING_3;
-      paragraphs.push(blockParagraph(el, { heading }));
+      const tier: HeadingTier = level === 1 ? 1 : level === 2 ? 2 : level === 3 ? 3 : 4;
+      paragraphs.push(headingParagraph(el, tier));
       return;
     }
 
@@ -114,21 +184,57 @@ function htmlToParagraphs(html: string | null | undefined): Paragraph[] {
   return paragraphs;
 }
 
-function heading(
-  text: string,
-  level: (typeof HeadingLevel)[keyof typeof HeadingLevel],
-) {
+function heading(text: string, tier: HeadingTier) {
+  const style = HEADING_STYLE[tier];
   return new Paragraph({
-    text,
-    heading: level,
-    spacing: { before: 240, after: 120 },
+    heading: HEADING_LEVEL[tier],
+    alignment: tier === 1 ? AlignmentType.CENTER : undefined,
+    border:
+      tier === 2
+        ? { bottom: { style: BorderStyle.SINGLE, color: COLORS.brown, size: 6, space: 4 } }
+        : undefined,
+    spacing: { before: tier === 1 ? 360 : 260, after: tier === 2 ? 160 : 140 },
+    children: [new TextRun({ text, bold: true, ...style })],
   });
 }
 
-function textCell(text: string, widthPercent: number) {
+function termLabel(text: string): TextRun {
+  return new TextRun({ text, bold: true, color: COLORS.brown });
+}
+
+function headerCell(text: string, widthPercent: number): TableCell {
   return new TableCell({
-    children: [new Paragraph(text)],
     width: { size: widthPercent, type: WidthType.PERCENTAGE },
+    shading: { fill: COLORS.brownDark },
+    margins: { top: 100, bottom: 100, left: 140, right: 140 },
+    children: [
+      new Paragraph({
+        children: [
+          new TextRun({
+            text,
+            bold: true,
+            allCaps: true,
+            color: "FFFFFF",
+            size: 18,
+            characterSpacing: 20,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function bodyCell(text: string, widthPercent: number): TableCell {
+  return new TableCell({
+    width: { size: widthPercent, type: WidthType.PERCENTAGE },
+    margins: { top: 120, bottom: 120, left: 140, right: 140 },
+    borders: {
+      top: NO_BORDER,
+      left: NO_BORDER,
+      right: NO_BORDER,
+      bottom: { style: BorderStyle.SINGLE, color: COLORS.calloutBorder, size: 4 },
+    },
+    children: [new Paragraph({ children: [new TextRun({ text, color: COLORS.ink })] })],
   });
 }
 
@@ -150,7 +256,7 @@ const FRONT_COLOR_HEX: Record<FrontColor, string> = {
 function section(title: string, html: string): Paragraph[] {
   const paragraphs = htmlToParagraphs(html);
   if (paragraphs.length === 0) return [];
-  return [heading(title, HeadingLevel.HEADING_3), ...paragraphs];
+  return [heading(title, 3), ...paragraphs];
 }
 
 export function buildFrontsExportInfo(
@@ -185,11 +291,52 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+function titlePage(activityName: string, formattedDate: string): Paragraph[] {
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+      children: [
+        new TextRun({
+          text: "Duché de Bicolline · Campagne",
+          allCaps: true,
+          characterSpacing: 30,
+          color: COLORS.muted,
+          size: 16,
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+      children: [
+        new TextRun({
+          text: activityName,
+          bold: true,
+          color: COLORS.ink,
+          size: 56,
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 320 },
+      children: [
+        new TextRun({
+          text: formattedDate,
+          allCaps: true,
+          characterSpacing: 30,
+          color: COLORS.brown,
+          size: 16,
+        }),
+      ],
+    }),
+  ];
+}
+
 function frontsSection(fronts: ExportFrontInfo[]): Paragraph[] {
   if (fronts.length === 0) return [];
-  const paragraphs: Paragraph[] = [
-    heading("Fronts et organisateurs", HeadingLevel.HEADING_3),
-  ];
+  const paragraphs: Paragraph[] = [heading("Fronts et organisateurs", 3)];
   fronts.forEach((front) => {
     paragraphs.push(
       new Paragraph({
@@ -204,7 +351,7 @@ function frontsSection(fronts: ExportFrontInfo[]): Paragraph[] {
       new Paragraph(front.guilds),
       new Paragraph({
         children: [
-          new TextRun({ text: "Organisateurs :", bold: true }),
+          termLabel("Organisateurs : "),
           ...front.organizers.flatMap((name) => [
             new TextRun({ text: "", break: 1 }),
             new TextRun(name),
@@ -222,21 +369,29 @@ function scheduleTable(rows: ScheduleRow[]): Table[] {
   return [
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: NO_BORDER,
+        bottom: NO_BORDER,
+        left: NO_BORDER,
+        right: NO_BORDER,
+        insideHorizontal: NO_BORDER,
+        insideVertical: NO_BORDER,
+      },
       rows: [
         new TableRow({
           children: [
-            textCell("Début", startWidth),
-            textCell("Fin", endWidth),
-            textCell("Élément", labelWidth),
+            headerCell("Début", startWidth),
+            headerCell("Fin", endWidth),
+            headerCell("Élément", labelWidth),
           ],
         }),
         ...rows.map(
           (row) =>
             new TableRow({
               children: [
-                textCell(row.startTime || "—", startWidth),
-                textCell(row.endTime || "—", endWidth),
-                textCell(
+                bodyCell(row.startTime || "—", startWidth),
+                bodyCell(row.endTime || "—", endWidth),
+                bodyCell(
                   row.label +
                     (row.hasConflict ? " ⚠ Conflit d'horaire" : ""),
                   labelWidth,
@@ -293,22 +448,18 @@ async function chapterMapImage(url: string): Promise<Paragraph[]> {
 
 async function chapterChildren(chapter: ActivityChapter): Promise<Paragraph[]> {
   const children: Paragraph[] = [
-    heading(chapter.title, HeadingLevel.HEADING_1),
+    heading(chapter.title, 1),
     ...htmlToParagraphs(chapter.game_text),
     ...(chapter.map_url ? await chapterMapImage(chapter.map_url) : []),
   ];
 
   if (chapter.objectives.length > 0) {
-    children.push(heading("Objectifs", HeadingLevel.HEADING_3));
+    children.push(heading("Objectifs", 3));
     chapter.objectives.forEach((objective, index) => {
-      children.push(heading(`Objectif ${index + 1}`, HeadingLevel.HEADING_4));
+      children.push(heading(`Objectif ${index + 1}`, 4));
       children.push(...htmlToParagraphs(objective.description));
       if (objective.rewards_detail) {
-        children.push(
-          new Paragraph({
-            children: [new TextRun({ text: "Gains : ", bold: true })],
-          }),
-        );
+        children.push(new Paragraph({ children: [termLabel("Gains : ")] }));
         children.push(...htmlToParagraphs(objective.rewards_detail));
       }
     });
@@ -318,10 +469,7 @@ async function chapterChildren(chapter: ActivityChapter): Promise<Paragraph[]> {
     .filter(Boolean)
     .join(" — ");
   if (scheduleInfo) {
-    children.push(
-      heading("Horaire du chapitre", HeadingLevel.HEADING_3),
-      new Paragraph(scheduleInfo),
-    );
+    children.push(heading("Horaire du chapitre", 3), new Paragraph(scheduleInfo));
   }
 
   children.push(
@@ -335,10 +483,7 @@ async function chapterChildren(chapter: ActivityChapter): Promise<Paragraph[]> {
   );
 
   if (chapter.healing_mode && chapter.healing_mode.length > 0) {
-    children.push(
-      heading("Mode de guérison", HeadingLevel.HEADING_3),
-      new Paragraph(chapter.healing_mode.join(", ")),
-    );
+    children.push(heading("Mode de guérison", 3), new Paragraph(chapter.healing_mode.join(", ")));
   }
   children.push(
     ...section(
@@ -373,8 +518,7 @@ export async function exportActivityDocumentToDocx(input: {
   const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
 
   const children: (Paragraph | Table)[] = [
-    new Paragraph({ text: activity.name, heading: HeadingLevel.TITLE }),
-    new Paragraph({ text: formattedDate, spacing: { after: 200 } }),
+    ...titlePage(activity.name, formattedDate),
   ];
 
   for (const block of blocks) {
@@ -384,15 +528,15 @@ export async function exportActivityDocumentToDocx(input: {
         break;
       case "details_registration":
         children.push(
-          heading("Inscription", HeadingLevel.HEADING_1),
-          heading("Participants", HeadingLevel.HEADING_2),
+          heading("Inscription", 1),
+          heading("Participants", 2),
           ...section("Tarifs", activity.registration_participants_pricing ?? ""),
           ...section(
             "Pour vous inscrire",
             activity.registration_participants_howto ?? "",
           ),
           ...frontsSection(fronts),
-          heading("Non-participants", HeadingLevel.HEADING_2),
+          heading("Non-participants", 2),
           ...section(
             "Tarifs",
             activity.registration_non_participants_pricing ?? "",
@@ -406,11 +550,9 @@ export async function exportActivityDocumentToDocx(input: {
       case "details_schedule": {
         const table = scheduleTable(scheduleRows);
         children.push(
-          heading("Horaire", HeadingLevel.HEADING_1),
+          heading("Horaire", 1),
           ...htmlToParagraphs(scheduleIntro),
-          ...(table.length > 0
-            ? [heading("Horaire de la journée", HeadingLevel.HEADING_3)]
-            : []),
+          ...(table.length > 0 ? [heading("Horaire de la journée", 3)] : []),
           ...table,
           ...htmlToParagraphs(scheduleOutro),
         );
@@ -418,7 +560,7 @@ export async function exportActivityDocumentToDocx(input: {
       }
       case "details_game_elements":
         children.push(
-          heading("Éléments jeux", HeadingLevel.HEADING_1),
+          heading("Éléments jeux", 1),
           ...section("Sécurité", activity.game_security ?? ""),
           ...section("États-major", activity.game_staff ?? ""),
           ...section("Gains", activity.game_rewards ?? ""),
@@ -428,10 +570,7 @@ export async function exportActivityDocumentToDocx(input: {
         );
         break;
       case "details_contact":
-        children.push(
-          heading("Nous joindre", HeadingLevel.HEADING_1),
-          ...htmlToParagraphs(activity.contact_info),
-        );
+        children.push(heading("Nous joindre", 1), ...htmlToParagraphs(activity.contact_info));
         break;
       case "chapter": {
         const chapter = block.chapter_id
@@ -442,7 +581,7 @@ export async function exportActivityDocumentToDocx(input: {
       }
       case "custom_text":
         if (block.label) {
-          children.push(heading(block.label, HeadingLevel.HEADING_3));
+          children.push(heading(block.label, 3));
         }
         children.push(...htmlToParagraphs(block.content));
         break;
@@ -450,6 +589,13 @@ export async function exportActivityDocumentToDocx(input: {
   }
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: DOC_FONT, size: 22, color: COLORS.ink },
+        },
+      },
+    },
     sections: [{ children }],
   });
 

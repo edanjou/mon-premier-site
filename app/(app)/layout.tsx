@@ -21,13 +21,13 @@ import { Castle, LogOut } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, ViewTransition } from "react";
 import { isItemAllowed, type HubItem } from "@/components/module-hub";
 import {
   getModuleAccessLevels,
   type ModuleAccessLevel,
 } from "@/lib/features";
-import { hubContextFor } from "@/lib/hub-items";
+import { hubContextFor, TOP_BAR_ITEMS } from "@/lib/hub-items";
 import { orderItems } from "@/lib/order-items";
 import { getOwnProfile, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
@@ -187,6 +187,9 @@ export default function DashboardLayout({
     (item) =>
       item.pinned && !item.disabled && isItemAllowed(item, levels, isAdmin),
   );
+  const topBarItems = TOP_BAR_ITEMS.filter((item) =>
+    isItemAllowed(item, levels, isAdmin),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -262,18 +265,40 @@ export default function DashboardLayout({
 
   return (
     <div className="flex flex-1 flex-col gap-4 bg-background p-4">
+      <div className="fixed top-4 right-16 z-50 flex items-center gap-2">
+        {topBarItems.map((item) => {
+          const Icon = item.icon;
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-label={item.label}
+              title={item.label}
+              className={`flex h-10 w-10 items-center justify-center rounded-full shadow-sm transition-colors ${
+                active
+                  ? "bg-primary text-white"
+                  : "bg-white text-foreground/70 hover:bg-black/[.05] dark:bg-zinc-900 dark:hover:bg-white/[.08]"
+              }`}
+            >
+              <Icon size={18} />
+            </Link>
+          );
+        })}
+      </div>
+
       <div className="flex w-20 flex-shrink-0 items-center justify-center">
         <Image
           src="/bicolline.svg"
           alt="Logo Bicolline"
           width={60}
           height={60}
-          className="h-[60px] w-[60px]"
+          className="h-[60px] w-[60px] dark:brightness-0 dark:invert"
         />
       </div>
 
       <div className="flex flex-1 gap-6">
-        <aside className="flex w-20 flex-shrink-0 flex-col items-center gap-2 rounded-[28px] bg-white py-6 shadow-sm dark:bg-zinc-900">
+        <aside className="flex w-20 flex-shrink-0 flex-col items-center gap-2 rounded-[28px] bg-white py-6 shadow-sm dark:border dark:border-white/60 dark:bg-zinc-900">
           <div className="flex w-full flex-col items-center gap-2">
             <SidebarItem
               href="/tableau-de-bord"
@@ -326,7 +351,9 @@ export default function DashboardLayout({
         </aside>
 
         <main className="flex flex-1 flex-col overflow-y-auto px-8 py-6">
-          <div className="flex-1">{children}</div>
+          <ViewTransition key={pathname} enter="fade-in" exit="fade-out">
+            <div className="flex-1">{children}</div>
+          </ViewTransition>
           <footer className="mt-8 text-right text-xs text-foreground/40">
             Outil développé par Eric D&apos;Anjou
           </footer>

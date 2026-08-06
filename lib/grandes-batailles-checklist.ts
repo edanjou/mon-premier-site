@@ -45,14 +45,18 @@ export type ChecklistItem = {
   assigned_to: string | null;
   task_type: string | null;
   list_key: string;
+  prompt: string | null;
 };
+
+const CHECKLIST_ITEM_SELECT =
+  "id, label, done, position, assigned_to, task_type, list_key, prompt";
 
 export async function listChecklistItems(
   listKey: string,
 ): Promise<ChecklistItem[]> {
   const { data, error } = await supabase
     .from("grandes_batailles_checklist")
-    .select("id, label, done, position, assigned_to, task_type, list_key")
+    .select(CHECKLIST_ITEM_SELECT)
     .eq("list_key", listKey)
     .order("position", { ascending: true });
   if (error) throw error;
@@ -71,7 +75,7 @@ export async function createChecklistItem(
   const { data, error } = await supabase
     .from("grandes_batailles_checklist")
     .insert({ list_key: listKey, label, position: count ?? 0 })
-    .select("id, label, done, position, assigned_to, task_type, list_key")
+    .select(CHECKLIST_ITEM_SELECT)
     .single();
   if (error) throw error;
   return data;
@@ -84,6 +88,7 @@ export async function updateChecklistItem(
     done?: boolean;
     assigned_to?: string | null;
     task_type?: string | null;
+    prompt?: string | null;
   },
 ): Promise<void> {
   const { error } = await supabase

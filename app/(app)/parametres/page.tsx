@@ -25,6 +25,7 @@ import {
   type Battlefield,
 } from "@/lib/battlefields";
 import { getOwnProfile } from "@/lib/profile";
+import { listEmailLog, type EmailLogRecord } from "@/lib/email-log";
 import {
   createQuartier,
   deleteQuartier,
@@ -312,6 +313,101 @@ function ChunkedSyncSettings({
       )}
       {error && (
         <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
+function EmailLogSettings() {
+  const [entries, setEntries] = useState<EmailLogRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchEntries = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const token = await getAuthToken();
+      setEntries(await listEmailLog(token));
+    } catch {
+      setError("Impossible de charger le journal des courriels.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchEntries sets a loading flag ahead of an async fetch
+    fetchEntries();
+  }, []);
+
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-foreground">
+            Journal des courriels
+          </h2>
+          <p className="mt-1 text-sm text-foreground/60">
+            Les 200 derniers courriels envoyés par l&apos;outil.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={fetchEntries}
+          className="rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+        >
+          Actualiser
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
+      ) : error ? (
+        <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+      ) : entries.length === 0 ? (
+        <p className="mt-4 text-sm text-foreground/60">
+          Aucun courriel envoyé pour l&apos;instant.
+        </p>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[600px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                <th className="py-2 pr-4 font-medium">Destinataire</th>
+                <th className="py-2 pr-4 font-medium">Sujet</th>
+                <th className="py-2 pr-4 font-medium">Statut</th>
+                <th className="py-2 pr-4 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr
+                  key={entry.id}
+                  className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
+                >
+                  <td className="py-2 pr-4">{entry.to_email}</td>
+                  <td className="py-2 pr-4">{entry.subject}</td>
+                  <td className="py-2 pr-4">
+                    <span
+                      className={
+                        entry.status === "sent"
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-red-600 dark:text-red-400"
+                      }
+                      title={entry.error ?? undefined}
+                    >
+                      {entry.status === "sent" ? "Envoyé" : "Échec"}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap py-2 pr-4 text-foreground/70">
+                    {formatSyncDate(entry.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -788,6 +884,7 @@ export default function ParametresPage() {
             getFrequency={getReligionMemberSyncFrequency}
             setFrequency={setReligionMemberSyncFrequency}
           />
+          <EmailLogSettings />
           <BattlefieldsSettings />
           <QuartiersSettings />
           <TaskTypesSettings />

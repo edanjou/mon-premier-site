@@ -56,6 +56,25 @@ function normalizeMarechal(row: RawMarechal): Marechal {
 const MARECHAL_SELECT =
   "id, character_id, formation_2025, formation_2026, is_campaign_team, notes, created_at, characters(name, player_name, guilds(name))";
 
+export function toTitleCase(value: string): string {
+  return value
+    .split(" ")
+    .map((word) =>
+      word
+        .split("-")
+        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+        .join("-"),
+    )
+    .join(" ");
+}
+
+export function marechalDisplayName(m: {
+  name: string;
+  player_name: string | null;
+}): string {
+  return toTitleCase(m.player_name || m.name);
+}
+
 export async function listMarechaux(): Promise<Marechal[]> {
   const { data, error } = await supabase
     .from("marechaux")
@@ -111,17 +130,46 @@ export type MarechalActivityStatus = {
   activity_id: string;
   is_available: boolean;
   is_assigned: boolean;
+  briefing_7h45: string | null;
+  homologation_8h9h: string | null;
+  homologation_9h10h: string | null;
+  briefing_17h: string | null;
+  position: number;
 };
+
+export type MarechalScheduleSlot =
+  | "briefing_7h45"
+  | "homologation_8h9h"
+  | "homologation_9h10h"
+  | "briefing_17h";
 
 export async function listMarechalActivityStatuses(
   activityId: string,
 ): Promise<MarechalActivityStatus[]> {
   const { data, error } = await supabase
     .from("marechal_activity_status")
-    .select("marechal_id, activity_id, is_available, is_assigned")
-    .eq("activity_id", activityId);
+    .select(
+      "marechal_id, activity_id, is_available, is_assigned, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
+    )
+    .eq("activity_id", activityId)
+    .order("position", { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+export async function reorderMarechalActivityStatuses(
+  updates: { marechal_id: string; activity_id: string; position: number }[],
+): Promise<void> {
+  await Promise.all(
+    updates.map(async ({ marechal_id, activity_id, position }) => {
+      const { error } = await supabase
+        .from("marechal_activity_status")
+        .update({ position })
+        .eq("marechal_id", marechal_id)
+        .eq("activity_id", activity_id);
+      if (error) throw error;
+    }),
+  );
 }
 
 export async function setMarechalActivityStatus(
@@ -142,6 +190,38 @@ export async function setMarechalActivityStatus(
       activity_id: activityId,
       is_available: input.is_available ?? existing?.is_available ?? false,
       is_assigned: input.is_assigned ?? existing?.is_assigned ?? false,
+    },
+    { onConflict: "marechal_id,activity_id" },
+  );
+  if (error) throw error;
+}
+
+export async function setMarechalScheduleSlot(
+  marechalId: string,
+  activityId: string,
+  slot: MarechalScheduleSlot,
+  value: string | null,
+): Promise<void> {
+  const { data: existing } = await supabase
+    .from("marechal_activity_status")
+    .select(
+      "is_available, is_assigned, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h",
+    )
+    .eq("marechal_id", marechalId)
+    .eq("activity_id", activityId)
+    .maybeSingle();
+
+  const { error } = await supabase.from("marechal_activity_status").upsert(
+    {
+      marechal_id: marechalId,
+      activity_id: activityId,
+      is_available: existing?.is_available ?? false,
+      is_assigned: existing?.is_assigned ?? false,
+      briefing_7h45: existing?.briefing_7h45 ?? null,
+      homologation_8h9h: existing?.homologation_8h9h ?? null,
+      homologation_9h10h: existing?.homologation_9h10h ?? null,
+      briefing_17h: existing?.briefing_17h ?? null,
+      [slot]: value,
     },
     { onConflict: "marechal_id,activity_id" },
   );
