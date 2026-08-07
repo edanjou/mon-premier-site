@@ -157,6 +157,19 @@ export async function listMarechalActivityStatuses(
   return data ?? [];
 }
 
+export async function listActivityStatusesForMarechal(
+  marechalId: string,
+): Promise<MarechalActivityStatus[]> {
+  const { data, error } = await supabase
+    .from("marechal_activity_status")
+    .select(
+      "marechal_id, activity_id, is_available, is_assigned, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
+    )
+    .eq("marechal_id", marechalId);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function reorderMarechalActivityStatuses(
   updates: { marechal_id: string; activity_id: string; position: number }[],
 ): Promise<void> {

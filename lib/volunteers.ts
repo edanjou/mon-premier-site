@@ -4,6 +4,7 @@ export type Volunteer = {
   id: string;
   character_id: number;
   coordination_key: string;
+  year: number;
   created_at: string;
   hours_confirmed: boolean;
   discount_scheduled: boolean;
@@ -22,6 +23,7 @@ type RawVolunteer = {
   id: string;
   character_id: number;
   coordination_key: string;
+  year: number;
   created_at: string;
   hours_confirmed: boolean;
   discount_scheduled: boolean;
@@ -36,6 +38,7 @@ function normalizeVolunteer(row: RawVolunteer): Volunteer {
     id: row.id,
     character_id: row.character_id,
     coordination_key: row.coordination_key,
+    year: row.year,
     created_at: row.created_at,
     hours_confirmed: row.hours_confirmed,
     discount_scheduled: row.discount_scheduled,
@@ -46,15 +49,17 @@ function normalizeVolunteer(row: RawVolunteer): Volunteer {
 }
 
 const VOLUNTEER_SELECT =
-  "id, character_id, coordination_key, created_at, hours_confirmed, discount_scheduled, characters(name, player_name, player_email)";
+  "id, character_id, coordination_key, year, created_at, hours_confirmed, discount_scheduled, characters(name, player_name, player_email)";
 
 export async function listVolunteers(
   coordinationKey: string,
+  year: number,
 ): Promise<Volunteer[]> {
   const { data, error } = await supabase
     .from("volunteers")
     .select(VOLUNTEER_SELECT)
     .eq("coordination_key", coordinationKey)
+    .eq("year", year)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []).map((row) => normalizeVolunteer(row as RawVolunteer));
@@ -62,11 +67,16 @@ export async function listVolunteers(
 
 export async function addVolunteer(
   coordinationKey: string,
+  year: number,
   characterId: number,
 ): Promise<Volunteer> {
   const { data, error } = await supabase
     .from("volunteers")
-    .insert({ coordination_key: coordinationKey, character_id: characterId })
+    .insert({
+      coordination_key: coordinationKey,
+      year,
+      character_id: characterId,
+    })
     .select(VOLUNTEER_SELECT)
     .single();
   if (error) throw error;
@@ -92,15 +102,17 @@ export async function setVolunteerStatus(
 
 export async function getOrCreateVolunteer(
   coordinationKey: string,
+  year: number,
   characterId: number,
 ): Promise<Volunteer> {
   const { data: existing, error: selectError } = await supabase
     .from("volunteers")
     .select(VOLUNTEER_SELECT)
     .eq("coordination_key", coordinationKey)
+    .eq("year", year)
     .eq("character_id", characterId)
     .maybeSingle();
   if (selectError) throw selectError;
   if (existing) return normalizeVolunteer(existing as RawVolunteer);
-  return addVolunteer(coordinationKey, characterId);
+  return addVolunteer(coordinationKey, year, characterId);
 }

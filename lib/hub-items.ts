@@ -15,6 +15,7 @@ import {
   Info,
   ListChecks,
   MapPinned,
+  NotebookPen,
   PocketKnife,
   ScrollText,
   Shield,
@@ -31,51 +32,57 @@ import BicollineIcon from "@/components/bicolline-icon";
 
 export const COMBAT_ITEMS: HubItem[] = [
   {
-    href: "/grande-bataille/combat/choses-a-faire",
+    href: "/grande-bataille/2026/combat/choses-a-faire",
     label: "Choses à faire",
     icon: ListChecks,
     moduleKey: "grandes-batailles",
   },
   {
-    href: "/grande-bataille/combat/escarmouches",
+    href: "/grande-bataille/2026/combat/escarmouches",
     label: "Escarmouches",
     icon: Axe,
   },
   {
-    href: "/grande-bataille/combat/homologation",
+    href: "/grande-bataille/2026/combat/homologation",
     label: "Homologation",
     icon: BadgeCheck,
   },
   {
-    href: "/grande-bataille/combat/volontaires",
+    href: "/grande-bataille/2026/combat/volontaires",
     label: "Gestion des volontaires",
     icon: Users,
     moduleKey: "benevoles",
   },
   {
-    href: "/grande-bataille/combat/feuille-de-temps",
+    href: "/grande-bataille/2026/combat/feuille-de-temps",
     label: "Feuille de temps",
     icon: Clock,
     moduleKey: "feuille-de-temps",
   },
   {
-    href: "/grande-bataille/combat/grandes-batailles",
+    href: "/grande-bataille/2026/combat/grandes-batailles",
     label: "Grandes Batailles",
     icon: Shield,
     moduleKey: "grandes-batailles",
+  },
+  {
+    href: "/grande-bataille/2026/combat/bilan",
+    label: "Bilan",
+    icon: NotebookPen,
+    moduleKey: "bilan",
   },
 ];
 
 export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
   {
-    href: "/grande-bataille/combat",
+    href: "/grande-bataille/2026/combat",
     label: "Combat",
     icon: Swords,
     noGate: true,
     childItems: COMBAT_ITEMS,
   },
   {
-    href: "/grande-bataille/tournois",
+    href: "/grande-bataille/2026/tournois",
     label: "Tournois",
     icon: Trophy,
     moduleKey: "tournois",
@@ -199,7 +206,8 @@ const BREADCRUMB_LABELS: Record<string, string> = Object.fromEntries(
     .filter((item) => !item.disabled && item.href.startsWith("/"))
     .map((item) => [item.href, item.label]),
 );
-BREADCRUMB_LABELS["/grande-bataille/tournois/feuille-de-temps"] =
+BREADCRUMB_LABELS["/grande-bataille/2026"] = "2026";
+BREADCRUMB_LABELS["/grande-bataille/2026/tournois/feuille-de-temps"] =
   "Feuille de temps";
 
 export function breadcrumbFor(
@@ -221,10 +229,10 @@ export function hubContextFor(pathname: string): {
   items: HubItem[];
   orderColumn: OrderColumn;
 } {
-  if (pathname.startsWith("/grande-bataille/combat")) {
+  if (pathname.startsWith("/grande-bataille/2026/combat")) {
     return { items: COMBAT_ITEMS, orderColumn: "combat_order" };
   }
-  if (pathname.startsWith("/grande-bataille")) {
+  if (pathname.startsWith("/grande-bataille/2026")) {
     return { items: GRANDE_BATAILLE_ITEMS, orderColumn: "grande_bataille_order" };
   }
   if (pathname.startsWith("/campagnes")) {

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarCheck,
   Cross,
   FileText,
   Flag,
@@ -16,18 +17,22 @@ import Breadcrumb from "@/components/breadcrumb";
 import { Pagination, usePagination } from "@/components/pagination";
 import RequireFeature from "@/components/require-feature";
 import RichTextEditor from "@/components/rich-text-editor";
+import { listActivities, type ActivitySummary } from "@/lib/activities";
 import { searchCharacters, type Character } from "@/lib/characters";
 import { getModuleAccessLevels } from "@/lib/features";
 import {
   addMarechal,
+  listActivityStatusesForMarechal,
   listAssignedActivityCountByMarechal,
   listMarechaux,
   marechalDisplayName,
   removeMarechal,
+  setMarechalActivityStatus,
   setMarechalFormation,
   toTitleCase,
   updateMarechal,
   type Marechal,
+  type MarechalActivityStatus,
 } from "@/lib/marechaux";
 import {
   addMedic,
@@ -271,28 +276,166 @@ function MarechalEditModal({
   );
 }
 
+function formatActivityDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function MarechalAvailabilityModal({
+  marechal,
+  activities,
+  canWrite,
+  onClose,
+}: {
+  marechal: Marechal;
+  activities: ActivitySummary[];
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  const [statuses, setStatuses] = useState<MarechalActivityStatus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listActivityStatusesForMarechal(marechal.id)
+      .then(setStatuses)
+      .catch(() => setError("Impossible de charger les disponibilités."))
+      .finally(() => setIsLoading(false));
+  }, [marechal.id]);
+
+  const handleToggle = async (activityId: string, checked: boolean) => {
+    if (!canWrite) return;
+    setStatuses((prev) => {
+      const exists = prev.some((s) => s.activity_id === activityId);
+      if (exists) {
+        return prev.map((s) =>
+          s.activity_id === activityId ? { ...s, is_available: checked } : s,
+        );
+      }
+      return [
+        ...prev,
+        {
+          marechal_id: marechal.id,
+          activity_id: activityId,
+          is_available: checked,
+          is_assigned: false,
+          briefing_7h45: null,
+          homologation_8h9h: null,
+          homologation_9h10h: null,
+          briefing_17h: null,
+          position: 0,
+        },
+      ];
+    });
+    try {
+      await setMarechalActivityStatus(marechal.id, activityId, {
+        is_available: checked,
+      });
+    } catch {
+      alert("Échec de la mise à jour.");
+      setStatuses((prev) =>
+        prev.map((s) =>
+          s.activity_id === activityId
+            ? { ...s, is_available: !checked }
+            : s,
+        ),
+      );
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex w-full max-w-md flex-col gap-3 rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <h2 className="font-semibold text-foreground">
+          Disponibilités — {marechalDisplayName(marechal)}
+        </h2>
+        {isLoading && (
+          <p className="text-sm text-foreground/60">Chargement…</p>
+        )}
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+        {!isLoading && !error && (
+          <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+            {activities.map((activity) => (
+              <label
+                key={activity.id}
+                className="flex items-center gap-2 rounded px-1 py-1.5 text-sm text-foreground hover:bg-black/[.03] dark:hover:bg-white/[.05]"
+              >
+                <input
+                  type="checkbox"
+                  disabled={!canWrite}
+                  checked={
+                    statuses.find((s) => s.activity_id === activity.id)
+                      ?.is_available ?? false
+                  }
+                  onChange={(e) =>
+                    handleToggle(activity.id, e.target.checked)
+                  }
+                  className="h-4 w-4 accent-primary disabled:cursor-not-allowed"
+                />
+                {activity.name} — {formatActivityDate(activity.date)}
+              </label>
+            ))}
+            {activities.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucune campagne pour l&apos;instant.
+              </p>
+            )}
+          </div>
+        )}
+        <div className="mt-1 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MarechauxTab({ canWrite }: { canWrite: boolean }) {
   const [marechaux, setMarechaux] = useState<Marechal[]>([]);
   const [campaignCounts, setCampaignCounts] = useState<Record<string, number>>(
     {},
   );
+  const [activities, setActivities] = useState<ActivitySummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingMarechal, setEditingMarechal] = useState<Marechal | null>(
     null,
   );
+  const [availabilityMarechal, setAvailabilityMarechal] =
+    useState<Marechal | null>(null);
   const [query, setQuery] = useState("");
 
   const fetchAll = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [list, counts] = await Promise.all([
+      const [list, counts, activityList] = await Promise.all([
         listMarechaux(),
         listAssignedActivityCountByMarechal(),
+        listActivities(),
       ]);
       setMarechaux(list);
       setCampaignCounts(counts);
+      setActivities(activityList);
     } catch {
       setError("Impossible de charger les maréchaux.");
     } finally {
@@ -442,6 +585,13 @@ function MarechauxTab({ canWrite }: { canWrite: boolean }) {
                       {canWrite && (
                         <div className="flex items-center justify-end gap-1">
                           <button
+                            onClick={() => setAvailabilityMarechal(m)}
+                            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                          >
+                            <CalendarCheck size={14} />
+                            Disponibilités
+                          </button>
+                          <button
                             onClick={() => setEditingMarechal(m)}
                             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
                           >
@@ -477,6 +627,15 @@ function MarechauxTab({ canWrite }: { canWrite: boolean }) {
           marechal={editingMarechal}
           onClose={() => setEditingMarechal(null)}
           onSaved={fetchAll}
+        />
+      )}
+
+      {availabilityMarechal && (
+        <MarechalAvailabilityModal
+          marechal={availabilityMarechal}
+          activities={activities}
+          canWrite={canWrite}
+          onClose={() => setAvailabilityMarechal(null)}
         />
       )}
     </div>

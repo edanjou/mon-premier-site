@@ -724,7 +724,7 @@ function TournamentsContent() {
         </h1>
         <div className="flex items-center gap-2">
           <Link
-            href="/grande-bataille/tournois/feuille-de-temps"
+            href="/grande-bataille/2026/tournois/feuille-de-temps"
             className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
           >
             <Clock size={16} />

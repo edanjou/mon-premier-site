@@ -7,11 +7,13 @@ export type TimesheetCategory = {
 
 export async function listTimesheetCategories(
   coordinationKey: string,
+  year: number,
 ): Promise<TimesheetCategory[]> {
   const { data, error } = await supabase
     .from("timesheet_categories")
     .select("id, name")
     .eq("coordination_key", coordinationKey)
+    .eq("year", year)
     .order("name", { ascending: true });
 
   if (error) throw error;
@@ -20,11 +22,12 @@ export async function listTimesheetCategories(
 
 export async function createTimesheetCategory(
   coordinationKey: string,
+  year: number,
   name: string,
 ): Promise<TimesheetCategory> {
   const { data, error } = await supabase
     .from("timesheet_categories")
-    .insert({ coordination_key: coordinationKey, name })
+    .insert({ coordination_key: coordinationKey, year, name })
     .select("id, name")
     .single();
 

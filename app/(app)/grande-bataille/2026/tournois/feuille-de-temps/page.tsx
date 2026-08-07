@@ -12,7 +12,7 @@ export default function TournoisFeuilleDeTempsPage() {
     <RequireFeature feature="tournois">
       <div>
         <Link
-          href="/grande-bataille/tournois"
+          href="/grande-bataille/2026/tournois"
           className="flex items-center gap-1.5 text-sm text-foreground/60 transition-colors hover:text-foreground"
         >
           <ArrowLeft size={14} />
@@ -23,7 +23,11 @@ export default function TournoisFeuilleDeTempsPage() {
         </h1>
         <Breadcrumb />
         <div className="mt-8">
-          <Timesheet coordinationKey="tournois" moduleKey="tournois" />
+          <Timesheet
+            coordinationKey="tournois"
+            moduleKey="tournois"
+            year={2026}
+          />
         </div>
       </div>
     </RequireFeature>

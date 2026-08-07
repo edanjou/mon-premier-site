@@ -14,7 +14,11 @@ export default function FeuilleDeTempsPage() {
         </h1>
         <Breadcrumb />
         <div className="mt-8">
-          <Timesheet coordinationKey="combat" moduleKey="feuille-de-temps" />
+          <Timesheet
+            coordinationKey="combat"
+            moduleKey="feuille-de-temps"
+            year={2026}
+          />
         </div>
       </div>
     </RequireFeature>

@@ -71,6 +71,16 @@ export function isItemAllowed(
   return (levels[moduleKeyFor(item)] ?? "none") !== "none";
 }
 
+export function titleSizeClass(label: string): string {
+  // Uniform size for everyone; only a single word genuinely too long to
+  // fit (regardless of how many words wrap around it) triggers a shrink.
+  const longestWord = Math.max(...label.split(/\s+/).map((w) => w.length));
+  if (longestWord > 12) {
+    return "text-[22px] lg:text-[14px] xl:text-[19px] 2xl:text-[24px]";
+  }
+  return "text-[36px] lg:text-[24px] xl:text-[30px] 2xl:text-[36px]";
+}
+
 function SortableHubCard({
   item,
   suppressClickRef,
@@ -105,7 +115,7 @@ function SortableHubCard({
         <Icon size={25} className="group-hover:animate-wiggle" />
       </div>
       <h2
-        className={`${glofters.className} translate-y-[4px] text-[36px] leading-none text-foreground`}
+        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
       >
         {item.label}
       </h2>
@@ -131,7 +141,7 @@ function PinnedHubCard({ item }: { item: HubItem }) {
         <Icon size={25} className="group-hover:animate-wiggle" />
       </div>
       <h2
-        className={`${glofters.className} translate-y-[4px] text-[36px] leading-none text-foreground`}
+        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
       >
         {item.label}
       </h2>
@@ -146,9 +156,9 @@ function DisabledHubCard({ item }: { item: HubItem }) {
       <div className="flex h-[55px] w-[55px] flex-shrink-0 items-center justify-center rounded-full bg-foreground/20 text-foreground/60">
         <Icon size={25} />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <h2
-          className={`${glofters.className} translate-y-[4px] text-[36px] leading-none text-foreground`}
+          className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
         >
           {item.label}
         </h2>

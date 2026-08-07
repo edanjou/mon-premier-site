@@ -52,11 +52,13 @@ const ENTRY_SELECT =
 
 export async function listTimesheetEntries(
   coordinationKey: string,
+  year: number,
 ): Promise<TimesheetEntry[]> {
   const { data, error } = await supabase
     .from("timesheet_entries")
     .select(ENTRY_SELECT)
     .eq("coordination_key", coordinationKey)
+    .eq("year", year)
     .order("date", { ascending: true });
   if (error) throw error;
   return (data ?? []).map((row) => normalizeEntry(row as RawTimesheetEntry));
@@ -80,12 +82,13 @@ async function saveHours(
 
 export async function createTimesheetEntry(
   coordinationKey: string,
+  year: number,
   input: TimesheetEntryInput,
 ): Promise<string> {
   const { hours, ...rest } = input;
   const { data, error } = await supabase
     .from("timesheet_entries")
-    .insert({ ...rest, coordination_key: coordinationKey })
+    .insert({ ...rest, coordination_key: coordinationKey, year })
     .select("id")
     .single();
   if (error) throw error;

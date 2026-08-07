@@ -45,6 +45,7 @@ function CreateUserModal({
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [title, setTitle] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -66,7 +67,7 @@ function CreateUserModal({
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ email, firstName, lastName }),
+      body: JSON.stringify({ email, firstName, lastName, title }),
     });
     const body = await res.json();
     setIsCreating(false);
@@ -111,6 +112,13 @@ function CreateUserModal({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
+          className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Titre (ex. Maréchal en chef)"
           className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
         />
         <p className="text-xs text-foreground/50">

@@ -1,26 +1,33 @@
 "use client";
 
 import {
-  Axe,
-  BadgeCheck,
   ChevronLeft,
+  Clock,
+  Layers,
   Plus,
   Search,
-  Shield,
+  Settings,
   Star,
   Trash2,
+  Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { glofters } from "@/app/fonts/glofters";
+import { titleSizeClass } from "@/components/module-hub";
 import { searchCharacters, type Character } from "@/lib/characters";
+import {
+  createDepartment,
+  deleteDepartment,
+  listDepartments,
+  renameDepartment,
+  type DepartmentDefinition,
+} from "@/lib/department-definitions";
 import {
   createDepartmentSlot,
   deleteDepartmentSlot,
   listAllDepartmentSlots,
   updateDepartmentSlot,
-  VOLUNTEER_DEPARTMENTS,
   type DepartmentSlot,
-  type VolunteerDepartment,
 } from "@/lib/department-slots";
 import { getModuleAccessLevels } from "@/lib/features";
 import { marechalDisplayName, toTitleCase } from "@/lib/marechaux";
@@ -48,11 +55,10 @@ import { getOwnProfile } from "@/lib/profile";
 const cellFieldClassName =
   "min-w-0 rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800";
 
-const DEPARTMENT_ICONS: Record<VolunteerDepartment, typeof Axe> = {
-  Escarmouches: Axe,
-  Homologation: BadgeCheck,
-  "Grandes Batailles": Shield,
-};
+// Departments with an explicit "chef d'équipe" star toggle — a fixed subset
+// by name rather than every department, since the star was requested only
+// for these two.
+const TEAM_LEAD_DEPARTMENTS = new Set(["Homologation", "Escarmouches"]);
 
 function slotHours(slots: DepartmentSlot[], slotId: string): number {
   return slots.find((s) => s.id === slotId)?.hours ?? 0;
@@ -61,10 +67,10 @@ function slotHours(slots: DepartmentSlot[], slotId: string): number {
 function departmentTotal(
   slots: DepartmentSlot[],
   assignments: VolunteerSlotAssignment[],
-  department: VolunteerDepartment,
+  departmentId: string,
 ): number {
   const slotIds = new Set(
-    slots.filter((s) => s.department === department).map((s) => s.id),
+    slots.filter((s) => s.department_id === departmentId).map((s) => s.id),
   );
   return assignments
     .filter((a) => slotIds.has(a.slot_id))
@@ -74,11 +80,11 @@ function departmentTotal(
 function volunteerTotal(
   slots: DepartmentSlot[],
   assignments: VolunteerSlotAssignment[],
-  department: VolunteerDepartment,
+  departmentId: string,
   volunteerId: string,
 ): number {
   const slotIds = new Set(
-    slots.filter((s) => s.department === department).map((s) => s.id),
+    slots.filter((s) => s.department_id === departmentId).map((s) => s.id),
   );
   return assignments
     .filter((a) => a.volunteer_id === volunteerId && slotIds.has(a.slot_id))
@@ -114,14 +120,124 @@ function BooleanDot({
   );
 }
 
+function DepartmentManager({
+  coordinationKey,
+  year,
+  departments,
+  onChange,
+}: {
+  coordinationKey: string;
+  year: number;
+  departments: DepartmentDefinition[];
+  onChange: () => Promise<void>;
+}) {
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setError(null);
+    try {
+      await createDepartment(
+        coordinationKey,
+        year,
+        newName.trim(),
+        departments.length,
+      );
+      setNewName("");
+      await onChange();
+    } catch {
+      setError("Échec de la création.");
+    }
+  };
+
+  const handleRename = async (dept: DepartmentDefinition, name: string) => {
+    if (!name.trim() || name.trim() === dept.name) return;
+    setError(null);
+    try {
+      await renameDepartment(dept.id, name.trim());
+      await onChange();
+    } catch {
+      setError("Échec de la modification.");
+    }
+  };
+
+  const handleDelete = async (dept: DepartmentDefinition) => {
+    if (
+      !window.confirm(
+        `Supprimer le département "${dept.name}" ? Ses blocs et l'affectation des volontaires seront aussi supprimés.`,
+      )
+    )
+      return;
+    try {
+      await deleteDepartment(dept.id);
+      await onChange();
+    } catch {
+      setError("Échec de la suppression.");
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col gap-2">
+        {departments.map((d) => (
+          <div key={d.id} className="flex items-center gap-2">
+            <input
+              type="text"
+              defaultValue={d.name}
+              onBlur={(e) => handleRename(d, e.target.value)}
+              className={`${cellFieldClassName} flex-1`}
+            />
+            <button
+              type="button"
+              onClick={() => handleDelete(d)}
+              aria-label="Supprimer"
+              className="rounded-full p-1.5 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        {departments.length === 0 && (
+          <p className="text-xs text-foreground/40">
+            Aucun département pour l&apos;instant.
+          </p>
+        )}
+      </div>
+      <form onSubmit={handleCreate} className="mt-2 flex items-center gap-2">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Ex. Intendance"
+          className={`${cellFieldClassName} flex-1`}
+        />
+        <button
+          type="submit"
+          className="flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#0c4390]"
+        >
+          <Plus size={14} />
+          Ajouter
+        </button>
+      </form>
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
 function SlotManager({
   coordinationKey,
-  department,
+  year,
+  departmentId,
   slots,
   onChange,
 }: {
   coordinationKey: string;
-  department: VolunteerDepartment;
+  year: number;
+  departmentId: string;
   slots: DepartmentSlot[];
   onChange: () => Promise<void>;
 }) {
@@ -129,7 +245,9 @@ function SlotManager({
   const [newHours, setNewHours] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const departmentSlots = slots.filter((s) => s.department === department);
+  const departmentSlots = slots.filter(
+    (s) => s.department_id === departmentId,
+  );
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +257,8 @@ function SlotManager({
     try {
       await createDepartmentSlot({
         coordination_key: coordinationKey,
-        department,
+        year,
+        department_id: departmentId,
         label: newLabel.trim(),
         hours,
         position: departmentSlots.length,
@@ -179,9 +298,7 @@ function SlotManager({
 
   return (
     <div className="rounded-lg border border-black/[.08] p-3 dark:border-white/[.145]">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">
-        Blocs — {department}
-      </h3>
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Blocs</h3>
       <div className="flex flex-col gap-2">
         {departmentSlots.map((slot) => (
           <div key={slot.id} className="flex items-center gap-2">
@@ -323,13 +440,14 @@ function AddVolunteerSearch({
 export default function VolunteersPanel({
   coordinationKey,
   moduleKey,
+  year,
 }: {
   coordinationKey: string;
   moduleKey: string;
+  year: number;
 }) {
-  const [view, setView] = useState<"dashboard" | VolunteerDepartment>(
-    "dashboard",
-  );
+  const [view, setView] = useState<"dashboard" | string>("dashboard");
+  const [departments, setDepartments] = useState<DepartmentDefinition[]>([]);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [departmentLinks, setDepartmentLinks] = useState<
     VolunteerDepartmentLink[]
@@ -344,6 +462,7 @@ export default function VolunteersPanel({
   const [departmentTab, setDepartmentTab] = useState<"blocs" | "volontaires">(
     "volontaires",
   );
+  const [showDepartmentSettings, setShowDepartmentSettings] = useState(false);
 
   useEffect(() => {
     getOwnProfile().then((profile) => {
@@ -358,13 +477,17 @@ export default function VolunteersPanel({
     setIsLoading(true);
     setError(null);
     try {
-      const volunteerList = await listVolunteers(coordinationKey);
+      const [departmentList, volunteerList] = await Promise.all([
+        listDepartments(coordinationKey, year),
+        listVolunteers(coordinationKey, year),
+      ]);
       const volunteerIds = volunteerList.map((v) => v.id);
       const [slotList, assignmentList, linkList] = await Promise.all([
-        listAllDepartmentSlots(coordinationKey),
+        listAllDepartmentSlots(coordinationKey, year),
         listAssignmentsForVolunteers(volunteerIds),
         listVolunteerDepartments(volunteerIds),
       ]);
+      setDepartments(departmentList);
       setVolunteers(volunteerList);
       setSlots(slotList);
       setAssignments(assignmentList);
@@ -379,20 +502,21 @@ export default function VolunteersPanel({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchAll sets a loading flag ahead of an async fetch
     fetchAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAll is stable for a given coordinationKey
-  }, [coordinationKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAll is stable for a given coordinationKey/year
+  }, [coordinationKey, year]);
 
   const handleAddVolunteer = async (
     character: Character,
-    department: VolunteerDepartment,
+    departmentId: string,
   ) => {
     if (!canWrite) return;
     try {
       const volunteer = await getOrCreateVolunteer(
         coordinationKey,
+        year,
         character.external_id,
       );
-      await addVolunteerToDepartment(volunteer.id, department);
+      await addVolunteerToDepartment(volunteer.id, departmentId);
       await fetchAll();
     } catch {
       alert("Échec de l'ajout.");
@@ -401,17 +525,17 @@ export default function VolunteersPanel({
 
   const handleRemoveFromDepartment = async (
     volunteer: Volunteer,
-    department: VolunteerDepartment,
+    department: DepartmentDefinition,
   ) => {
     if (!canWrite) return;
     if (
       !window.confirm(
-        `Retirer ${marechalDisplayName(volunteer)} de ${department} ?`,
+        `Retirer ${marechalDisplayName(volunteer)} de ${department.name} ?`,
       )
     )
       return;
     try {
-      await removeVolunteerFromDepartment(volunteer.id, department);
+      await removeVolunteerFromDepartment(volunteer.id, department.id);
       await fetchAll();
     } catch {
       alert("Échec de la suppression.");
@@ -437,22 +561,22 @@ export default function VolunteersPanel({
 
   const handleToggleTeamLead = async (
     volunteerId: string,
-    department: VolunteerDepartment,
+    departmentId: string,
   ) => {
     if (!canWrite) return;
     const current = departmentLinks.find(
-      (l) => l.volunteer_id === volunteerId && l.department === department,
+      (l) => l.volunteer_id === volunteerId && l.department_id === departmentId,
     );
     const value = !current?.team_lead;
     setDepartmentLinks((prev) =>
       prev.map((l) =>
-        l.volunteer_id === volunteerId && l.department === department
+        l.volunteer_id === volunteerId && l.department_id === departmentId
           ? { ...l, team_lead: value }
           : l,
       ),
     );
     try {
-      await setVolunteerTeamLead(volunteerId, department, value);
+      await setVolunteerTeamLead(volunteerId, departmentId, value);
     } catch {
       alert("Échec de la mise à jour.");
       await fetchAll();
@@ -491,35 +615,34 @@ export default function VolunteersPanel({
     return <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
   }
 
-  const isInDepartment = (volunteerId: string, department: VolunteerDepartment) =>
+  const isInDepartment = (volunteerId: string, departmentId: string) =>
     departmentLinks.some(
-      (l) => l.volunteer_id === volunteerId && l.department === department,
+      (l) => l.volunteer_id === volunteerId && l.department_id === departmentId,
     );
 
-  const isTeamLead = (volunteerId: string, department: VolunteerDepartment) =>
+  const isTeamLead = (volunteerId: string, departmentId: string) =>
     departmentLinks.some(
       (l) =>
         l.volunteer_id === volunteerId &&
-        l.department === department &&
+        l.department_id === departmentId &&
         l.team_lead,
     );
 
   if (view === "dashboard") {
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {VOLUNTEER_DEPARTMENTS.map((department) => {
-            const Icon = DEPARTMENT_ICONS[department];
-            return (
+        <div className="flex items-start gap-3">
+          <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-3">
+            {departments.map((department) => (
               <div
-                key={department}
+                key={department.id}
                 onClick={() => {
-                  setView(department);
+                  setView(department.id);
                   setDepartmentTab("volontaires");
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    setView(department);
+                    setView(department.id);
                     setDepartmentTab("volontaires");
                   }
                 }}
@@ -528,24 +651,71 @@ export default function VolunteersPanel({
                 className="group flex cursor-pointer items-center gap-3 rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border dark:border-white/60 dark:bg-zinc-900"
               >
                 <span className="icon-badge-hover flex h-[55px] w-[55px] flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
-                  <Icon size={25} className="group-hover:animate-wiggle" />
+                  <Layers size={25} className="group-hover:animate-wiggle" />
                 </span>
                 <h2
-                  className={`${glofters.className} translate-y-[4px] text-[28px] leading-none text-foreground`}
+                  className={`${glofters.className} ${titleSizeClass(department.name)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
                 >
-                  {department}
+                  {department.name}
                 </h2>
               </div>
-            );
-          })}
+            ))}
+            {departments.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucun département pour l&apos;instant.
+              </p>
+            )}
+          </div>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => setShowDepartmentSettings(true)}
+              aria-label="Gérer les départements"
+              title="Gérer les départements"
+              className="flex-shrink-0 rounded-full p-2 text-foreground/50 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+            >
+              <Settings size={18} />
+            </button>
+          )}
         </div>
+
+        {showDepartmentSettings && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setShowDepartmentSettings(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+            >
+              <h2 className="mb-3 font-semibold text-foreground">
+                Gérer les départements
+              </h2>
+              <DepartmentManager
+                coordinationKey={coordinationKey}
+                year={year}
+                departments={departments}
+                onChange={fetchAll}
+              />
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDepartmentSettings(false)}
+                  className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] table-fixed text-left text-sm">
             <colgroup>
               <col />
-              {VOLUNTEER_DEPARTMENTS.map((d) => (
-                <col key={d} className="w-32" />
+              {departments.map((d) => (
+                <col key={d.id} className="w-32" />
               ))}
               <col className="w-20" />
               <col className="w-24" />
@@ -554,9 +724,9 @@ export default function VolunteersPanel({
             <thead>
               <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
                 <th className="py-2 pr-4 font-medium">Nom</th>
-                {VOLUNTEER_DEPARTMENTS.map((d) => (
-                  <th key={d} className="py-2 pr-4 font-medium">
-                    {d}
+                {departments.map((d) => (
+                  <th key={d.id} className="py-2 pr-4 font-medium">
+                    {d.name}
                   </th>
                 ))}
                 <th className="py-2 pr-4 font-medium">Total</th>
@@ -570,8 +740,8 @@ export default function VolunteersPanel({
             </thead>
             <tbody>
               {volunteers.map((v) => {
-                const total = VOLUNTEER_DEPARTMENTS.reduce(
-                  (sum, d) => sum + volunteerTotal(slots, assignments, d, v.id),
+                const total = departments.reduce(
+                  (sum, d) => sum + volunteerTotal(slots, assignments, d.id, v.id),
                   0,
                 );
                 return (
@@ -587,10 +757,10 @@ export default function VolunteersPanel({
                         </span>
                       )}
                     </td>
-                    {VOLUNTEER_DEPARTMENTS.map((d) => (
-                      <td key={d} className="py-2 pr-4 text-foreground/80">
-                        {isInDepartment(v.id, d)
-                          ? `${volunteerTotal(slots, assignments, d, v.id)} h`
+                    {departments.map((d) => (
+                      <td key={d.id} className="py-2 pr-4 text-foreground/80">
+                        {isInDepartment(v.id, d.id)
+                          ? `${volunteerTotal(slots, assignments, d.id, v.id)} h`
                           : "—"}
                       </td>
                     ))}
@@ -624,7 +794,7 @@ export default function VolunteersPanel({
               {volunteers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={VOLUNTEER_DEPARTMENTS.length + 4}
+                    colSpan={departments.length + 4}
                     className="py-3 text-center text-sm text-foreground/60"
                   >
                     Aucun volontaire pour l&apos;instant.
@@ -638,12 +808,19 @@ export default function VolunteersPanel({
     );
   }
 
-  const department = view;
-  const departmentSlots = slots.filter((s) => s.department === department);
+  const department = departments.find((d) => d.id === view);
+  if (!department) {
+    return (
+      <p className="text-sm text-red-600 dark:text-red-400">
+        Département introuvable.
+      </p>
+    );
+  }
+  const departmentSlots = slots.filter((s) => s.department_id === department.id);
   const departmentVolunteers = volunteers.filter((v) =>
-    isInDepartment(v.id, department),
+    isInDepartment(v.id, department.id),
   );
-  const DepartmentIcon = DEPARTMENT_ICONS[department];
+  const showTeamLead = TEAM_LEAD_DEPARTMENTS.has(department.name);
 
   return (
     <div className="flex flex-col gap-4">
@@ -657,32 +834,33 @@ export default function VolunteersPanel({
       </button>
 
       <div className="flex items-center gap-2">
-        <DepartmentIcon size={20} className="text-primary" />
+        <Layers size={20} className="text-primary" />
         <h2 className="text-xl font-semibold text-foreground">
-          {department}
+          {department.name}
         </h2>
         <span className="text-sm text-foreground/60">
-          — {departmentTotal(slots, assignments, department)} h au total
+          — {departmentTotal(slots, assignments, department.id)} h au total
         </span>
       </div>
 
       <div className="flex gap-1 border-b border-black/[.08] dark:border-white/[.08]">
         {(
           [
-            { key: "volontaires", label: "Volontaires" },
-            { key: "blocs", label: "Gestion des blocs" },
+            { key: "volontaires", label: "Volontaires", icon: Users },
+            { key: "blocs", label: "Gestion des blocs", icon: Clock },
           ] as const
         ).map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setDepartmentTab(tab.key)}
-            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
               departmentTab === tab.key
                 ? "border-b-2 border-primary text-primary"
                 : "text-foreground/60 hover:text-foreground"
             }`}
           >
+            <tab.icon size={16} />
             {tab.label}
           </button>
         ))}
@@ -691,7 +869,8 @@ export default function VolunteersPanel({
       {departmentTab === "blocs" && canWrite && (
         <SlotManager
           coordinationKey={coordinationKey}
-          department={department}
+          year={year}
+          departmentId={department.id}
           slots={slots}
           onChange={fetchAll}
         />
@@ -701,7 +880,7 @@ export default function VolunteersPanel({
         <>
           {canWrite && (
             <AddVolunteerSearch
-              onAdd={(character) => handleAddVolunteer(character, department)}
+              onAdd={(character) => handleAddVolunteer(character, department.id)}
               excludeIds={departmentVolunteers.map((v) => v.character_id)}
             />
           )}
@@ -747,19 +926,20 @@ export default function VolunteersPanel({
                   >
                     <td className="py-2 pr-4 text-foreground">
                       <span className="flex items-center gap-1.5">
-                        {(department === "Homologation" ||
-                          department === "Escarmouches") && (
+                        {showTeamLead && (
                           <button
                             type="button"
                             disabled={!canWrite}
-                            onClick={() => handleToggleTeamLead(v.id, department)}
+                            onClick={() =>
+                              handleToggleTeamLead(v.id, department.id)
+                            }
                             aria-label={
-                              isTeamLead(v.id, department)
+                              isTeamLead(v.id, department.id)
                                 ? "Chef d'équipe"
                                 : "Marquer comme chef d'équipe"
                             }
                             title={
-                              isTeamLead(v.id, department)
+                              isTeamLead(v.id, department.id)
                                 ? "Chef d'équipe"
                                 : "Marquer comme chef d'équipe"
                             }
@@ -768,7 +948,7 @@ export default function VolunteersPanel({
                             <Star
                               size={14}
                               className={
-                                isTeamLead(v.id, department)
+                                isTeamLead(v.id, department.id)
                                   ? "fill-amber-400 text-amber-400"
                                   : "text-foreground/30"
                               }
@@ -804,7 +984,7 @@ export default function VolunteersPanel({
                       </td>
                     ))}
                     <td className="py-2 pr-4 font-medium text-foreground">
-                      {volunteerTotal(slots, assignments, department, v.id)}
+                      {volunteerTotal(slots, assignments, department.id, v.id)}
                     </td>
                     <td className="py-2 pr-4">
                       {canWrite && (

@@ -83,10 +83,11 @@ export async function POST(request: Request) {
   const { admin } = auth;
 
   const body = await request.json();
-  const { email, firstName, lastName } = body as {
+  const { email, firstName, lastName, title } = body as {
     email?: string;
     firstName?: string;
     lastName?: string;
+    title?: string;
   };
 
   if (!email) {
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
     .update({
       first_name: firstName ?? null,
       last_name: lastName ?? null,
+      title: title ?? null,
       role: "user",
     })
     .eq("id", data.user.id);

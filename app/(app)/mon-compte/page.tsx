@@ -71,7 +71,6 @@ export default function MonComptePage() {
       .update({
         first_name: firstName,
         last_name: lastName,
-        title: title || null,
       })
       .eq("id", user.id);
     setIsProfileLoading(false);
@@ -157,10 +156,14 @@ export default function MonComptePage() {
           <input
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            disabled
             placeholder="Titre (ex. Maréchal en chef)"
-            className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+            title="Modifiable uniquement par un administrateur"
+            className="rounded border border-black/[.08] bg-white px-3 py-2 text-sm text-foreground disabled:opacity-60 dark:border-white/[.145] dark:bg-zinc-800"
           />
+          <p className="-mt-2 text-xs text-foreground/50">
+            Le titre ne peut être modifié que par un administrateur.
+          </p>
           {profileError && (
             <p className="text-sm text-red-600 dark:text-red-400">
               {profileError}

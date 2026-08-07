@@ -31,10 +31,12 @@ const cellFieldClassName =
 
 function PeopleManager({
   coordinationKey,
+  year,
   people,
   onChange,
 }: {
   coordinationKey: string;
+  year: number;
   people: Person[];
   onChange: () => Promise<void>;
 }) {
@@ -48,7 +50,7 @@ function PeopleManager({
     if (!newName.trim()) return;
     setError(null);
     try {
-      await createPerson(coordinationKey, newName.trim());
+      await createPerson(coordinationKey, year, newName.trim());
       setNewName("");
       await onChange();
     } catch {
@@ -191,10 +193,12 @@ function PeopleManager({
 
 function EventsManager({
   coordinationKey,
+  year,
   categories,
   onChange,
 }: {
   coordinationKey: string;
+  year: number;
   categories: TimesheetCategory[];
   onChange: () => Promise<void>;
 }) {
@@ -208,7 +212,7 @@ function EventsManager({
     if (!newName.trim()) return;
     setError(null);
     try {
-      await createTimesheetCategory(coordinationKey, newName.trim());
+      await createTimesheetCategory(coordinationKey, year, newName.trim());
       setNewName("");
       await onChange();
     } catch {
@@ -360,9 +364,11 @@ const TABS: { key: TimesheetTab; label: string; icon: typeof Clock }[] = [
 export default function Timesheet({
   coordinationKey,
   moduleKey,
+  year,
 }: {
   coordinationKey: string;
   moduleKey: string;
+  year: number;
 }) {
   const [tab, setTab] = useState<TimesheetTab>("feuille-de-temps");
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
@@ -392,9 +398,9 @@ export default function Timesheet({
     setError(null);
     try {
       const [entryList, peopleList, categoryList] = await Promise.all([
-        listTimesheetEntries(coordinationKey),
-        listPeople(coordinationKey),
-        listTimesheetCategories(coordinationKey),
+        listTimesheetEntries(coordinationKey, year),
+        listPeople(coordinationKey, year),
+        listTimesheetCategories(coordinationKey, year),
       ]);
       setEntries(entryList);
       setPeople(peopleList);
@@ -416,7 +422,8 @@ export default function Timesheet({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchAll sets a loading flag ahead of an async fetch
     fetchAll();
-  }, [coordinationKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAll is stable for a given coordinationKey/year
+  }, [coordinationKey, year]);
 
   const updateLocalEntry = (id: string, patch: Partial<TimesheetEntry>) => {
     setEntries((prev) =>
@@ -508,7 +515,7 @@ export default function Timesheet({
         const n = parseFloat(value);
         if (n > 0) hours[personId] = n;
       }
-      await createTimesheetEntry(coordinationKey, {
+      await createTimesheetEntry(coordinationKey, year, {
         date: newDate,
         category_id: newCategoryId || null,
         description: newDescription || null,
@@ -789,6 +796,7 @@ export default function Timesheet({
         <div className="pt-4">
           <PeopleManager
             coordinationKey={coordinationKey}
+            year={year}
             people={people}
             onChange={fetchAll}
           />
@@ -799,6 +807,7 @@ export default function Timesheet({
         <div className="pt-4">
           <EventsManager
             coordinationKey={coordinationKey}
+            year={year}
             categories={categories}
             onChange={fetchAll}
           />

@@ -20,7 +20,9 @@ export type ChapterObjectiveInput = {
 
 export type GrandeBatailleChapter = {
   id: string;
-  grande_bataille_id: string;
+  coordination_key: string;
+  year: number;
+  date: string;
   title: string;
   game_text: string | null;
   terrain_limits: string | null;
@@ -32,14 +34,15 @@ export type GrandeBatailleChapter = {
   special_rules: string | null;
   special_elements: string | null;
   monsters_war_machines: string | null;
-  position: number;
   created_at: string;
   battlefields: Battlefield[];
   objectives: ChapterObjective[];
 };
 
 export type GrandeBatailleChapterInput = {
-  grande_bataille_id: string;
+  coordination_key: string;
+  year: number;
+  date: string;
   title: string;
   game_text: string | null;
   terrain_limits: string | null;
@@ -51,7 +54,6 @@ export type GrandeBatailleChapterInput = {
   special_rules: string | null;
   special_elements: string | null;
   monsters_war_machines: string | null;
-  position: number;
   battlefield_ids: string[];
   objective_inputs: ChapterObjectiveInput[];
 };
@@ -82,13 +84,15 @@ const CHAPTER_SELECT =
   "*, grande_bataille_chapter_battlefields(battlefields(id, name)), grande_bataille_chapter_objectives(id, description, rewards_detail, percentage, position)";
 
 export async function listGrandeBatailleChapters(
-  grandeBatailleId: string,
+  coordinationKey: string,
+  year: number,
 ): Promise<GrandeBatailleChapter[]> {
   const { data, error } = await supabase
     .from("grande_bataille_chapters")
     .select(CHAPTER_SELECT)
-    .eq("grande_bataille_id", grandeBatailleId)
-    .order("position", { ascending: true });
+    .eq("coordination_key", coordinationKey)
+    .eq("year", year)
+    .order("date", { ascending: true });
 
   if (error) throw error;
   return (data ?? []).map((row) => ({
@@ -176,4 +180,12 @@ export async function updateGrandeBatailleChapter(
 
   await linkBattlefields(id, battlefield_ids);
   await saveObjectives(id, objective_inputs);
+}
+
+export async function deleteGrandeBatailleChapter(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("grande_bataille_chapters")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
 }

@@ -5,11 +5,15 @@ export type Person = {
   name: string;
 };
 
-export async function listPeople(coordinationKey: string): Promise<Person[]> {
+export async function listPeople(
+  coordinationKey: string,
+  year: number,
+): Promise<Person[]> {
   const { data, error } = await supabase
     .from("people")
     .select("id, name")
     .eq("coordination_key", coordinationKey)
+    .eq("year", year)
     .order("name", { ascending: true });
 
   if (error) throw error;
@@ -18,11 +22,12 @@ export async function listPeople(coordinationKey: string): Promise<Person[]> {
 
 export async function createPerson(
   coordinationKey: string,
+  year: number,
   name: string,
 ): Promise<Person> {
   const { data, error } = await supabase
     .from("people")
-    .insert({ coordination_key: coordinationKey, name })
+    .insert({ coordination_key: coordinationKey, year, name })
     .select("id, name")
     .single();
 

@@ -57,6 +57,21 @@ export type ActivityInput = {
   participants_per_front: number;
 } & ActivityStaffing;
 
+export type ActivitySummary = {
+  id: string;
+  name: string;
+  date: string;
+};
+
+export async function listActivities(): Promise<ActivitySummary[]> {
+  const { data, error } = await supabase
+    .from("activities")
+    .select("id, name, date")
+    .order("date", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function updateActivityDetails(
   activityId: string,
   details: ActivityDetails,
