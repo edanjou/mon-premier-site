@@ -42,6 +42,9 @@ export type HubItem = {
   childItems?: HubItem[];
   /** Always rendered last, in the order given — excluded from drag reordering. */
   pinned?: boolean;
+  /** Hidden from admins regardless of noGate/permissions (e.g. "Faire une
+   * demande" — a regular-user action admins don't need). */
+  hideForAdmin?: boolean;
 };
 
 export type OrderColumn =
@@ -66,6 +69,7 @@ export function isItemAllowed(
       (child) => !child.disabled && isItemAllowed(child, levels, isAdmin),
     );
   }
+  if (item.hideForAdmin && isAdmin) return false;
   if (item.noGate) return true;
   if (isAdmin) return true;
   return (levels[moduleKeyFor(item)] ?? "none") !== "none";
@@ -115,7 +119,7 @@ function SortableHubCard({
         <Icon size={25} className="group-hover:animate-wiggle" />
       </div>
       <h2
-        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
+        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-[0.9] text-foreground`}
       >
         {item.label}
       </h2>
@@ -141,7 +145,7 @@ function PinnedHubCard({ item }: { item: HubItem }) {
         <Icon size={25} className="group-hover:animate-wiggle" />
       </div>
       <h2
-        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
+        className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-[0.9] text-foreground`}
       >
         {item.label}
       </h2>
@@ -158,7 +162,7 @@ function DisabledHubCard({ item }: { item: HubItem }) {
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <h2
-          className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
+          className={`${glofters.className} ${titleSizeClass(item.label)} line-clamp-2 min-w-0 break-words leading-[0.9] text-foreground`}
         >
           {item.label}
         </h2>

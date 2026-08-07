@@ -23,6 +23,13 @@ export const MODULES: ModuleDefinition[] = [
   { key: "tournois", label: "Tournois" },
   { key: "documents", label: "Gestion documentaire" },
   { key: "feuille-de-temps", label: "Feuille de temps" },
+  { key: "generale", label: "Générale" },
+  { key: "jeu-gb", label: "Jeu (Grande Bataille)" },
+  { key: "securite", label: "Sécurité" },
+  { key: "accueil", label: "Accueil" },
+  { key: "vie-du-duche", label: "Vie du Duché" },
+  { key: "operations", label: "Opérations" },
+  { key: "administration", label: "Administration" },
 ];
 
 function moduleByKey(key: string): ModuleDefinition {
@@ -68,6 +75,13 @@ export const PERMISSION_TREE: PermissionTreeNode[] = [
           { type: "leaf", module: moduleByKey("bilan") },
         ],
       },
+      { type: "leaf", module: moduleByKey("generale") },
+      { type: "leaf", module: moduleByKey("jeu-gb") },
+      { type: "leaf", module: moduleByKey("securite") },
+      { type: "leaf", module: moduleByKey("accueil") },
+      { type: "leaf", module: moduleByKey("vie-du-duche") },
+      { type: "leaf", module: moduleByKey("operations") },
+      { type: "leaf", module: moduleByKey("administration") },
     ],
   },
   { type: "leaf", module: moduleByKey("jeu") },

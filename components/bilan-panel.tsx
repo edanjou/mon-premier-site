@@ -41,6 +41,11 @@ const SECTIONS: readonly BilanSection[] = [
     placeholder: "Estimation du temps investi cette année…",
   },
   {
+    key: "organigramme",
+    title: "Organigramme",
+    placeholder: "Structure de l'équipe, rôles et responsabilités…",
+  },
+  {
     key: "bons_coups",
     title: "Résumé des bons coups",
     placeholder: "Ce qui a bien fonctionné…",
@@ -91,6 +96,7 @@ const SECTIONS: readonly BilanSection[] = [
 function emptySections(): BilanSectionsInput {
   return {
     heures_approximatives: "",
+    organigramme: "",
     bons_coups: "",
     pistes_amelioration: "",
     priorites: "",
@@ -188,6 +194,7 @@ export default function BilanPanel({
       setBilan(currentBilan);
       setForm({
         heures_approximatives: currentBilan.heures_approximatives ?? "",
+        organigramme: currentBilan.organigramme ?? "",
         bons_coups: currentBilan.bons_coups ?? "",
         pistes_amelioration: currentBilan.pistes_amelioration ?? "",
         priorites: currentBilan.priorites ?? "",

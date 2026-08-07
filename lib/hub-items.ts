@@ -12,9 +12,11 @@ import {
   Hammer,
   Home,
   IdCard,
+  Inbox,
   Info,
   ListChecks,
   MapPinned,
+  MessageSquarePlus,
   NotebookPen,
   PocketKnife,
   ScrollText,
@@ -87,34 +89,57 @@ export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
     icon: Trophy,
     moduleKey: "tournois",
   },
-  { href: "#generale", label: "Générale", icon: Info, disabled: true },
-  { href: "#jeu-gb", label: "Jeu", icon: ChessPawn, disabled: true },
+  { href: "/grande-bataille/2026/generale", label: "Générale", icon: Info, moduleKey: "generale" },
+  { href: "/grande-bataille/2026/jeu-gb", label: "Jeu", icon: ChessPawn, moduleKey: "jeu-gb" },
   {
-    href: "#securite",
+    href: "/grande-bataille/2026/securite",
     label: "Sécurité",
     icon: ShieldAlert,
-    disabled: true,
+    moduleKey: "securite",
   },
-  { href: "#accueil", label: "Accueil", icon: Home, disabled: true },
   {
-    href: "#vie-du-duche",
+    href: "/grande-bataille/2026/accueil",
+    label: "Accueil",
+    icon: Home,
+    moduleKey: "accueil",
+  },
+  {
+    href: "/grande-bataille/2026/vie-du-duche",
     label: "Vie du Duché",
     icon: Theater,
-    disabled: true,
+    moduleKey: "vie-du-duche",
   },
   {
-    href: "#operations",
+    href: "/grande-bataille/2026/operations",
     label: "Opérations",
     icon: ClipboardList,
-    disabled: true,
+    moduleKey: "operations",
   },
   {
-    href: "#administration",
+    href: "/grande-bataille/2026/administration",
     label: "Administration",
     icon: Briefcase,
-    disabled: true,
+    moduleKey: "administration",
   },
 ];
+
+// Coordinations with only the 4 generic modules (Volontaires, Feuille de
+// temps, Bilan, Choses à faire) — served by the [coordination] dynamic
+// route, unlike Combat/Tournois which have their own static folders and
+// extra, coordination-specific pages.
+export const EXTRA_COORDINATIONS: { key: string; label: string }[] = [
+  { key: "generale", label: "Générale" },
+  { key: "jeu-gb", label: "Jeu" },
+  { key: "securite", label: "Sécurité" },
+  { key: "accueil", label: "Accueil" },
+  { key: "vie-du-duche", label: "Vie du Duché" },
+  { key: "operations", label: "Opérations" },
+  { key: "administration", label: "Administration" },
+];
+
+export function coordinationLabel(key: string): string {
+  return EXTRA_COORDINATIONS.find((c) => c.key === key)?.label ?? key;
+}
 
 export const CAMPAGNES_ITEMS: HubItem[] = [
   { href: "/campagnes/marechaux", label: "Liste maréchaux", icon: PocketKnife },
@@ -186,6 +211,14 @@ export const DASHBOARD_ITEMS: HubItem[] = [
 // Mon compte are global and not tied to any hub context.
 export const TOP_BAR_ITEMS: HubItem[] = [
   { href: "/choses-a-faire", label: "Choses à faire", icon: ListChecks },
+  { href: "/demandes", label: "Demandes", icon: Inbox },
+  {
+    href: "/demandes/nouvelle",
+    label: "Faire une demande",
+    icon: MessageSquarePlus,
+    noGate: true,
+    hideForAdmin: true,
+  },
   { href: "/parametres", label: "Paramètres", icon: Hammer },
   {
     href: "/mon-compte",
@@ -209,6 +242,20 @@ const BREADCRUMB_LABELS: Record<string, string> = Object.fromEntries(
 BREADCRUMB_LABELS["/grande-bataille/2026"] = "2026";
 BREADCRUMB_LABELS["/grande-bataille/2026/tournois/feuille-de-temps"] =
   "Feuille de temps";
+BREADCRUMB_LABELS["/grande-bataille/2026/tournois/volontaires"] =
+  "Gestion des volontaires";
+BREADCRUMB_LABELS["/grande-bataille/2026/tournois/bilan"] = "Bilan";
+BREADCRUMB_LABELS["/grande-bataille/2026/tournois/choses-a-faire"] =
+  "Choses à faire";
+for (const c of EXTRA_COORDINATIONS) {
+  BREADCRUMB_LABELS[`/grande-bataille/2026/${c.key}/volontaires`] =
+    "Gestion des volontaires";
+  BREADCRUMB_LABELS[`/grande-bataille/2026/${c.key}/feuille-de-temps`] =
+    "Feuille de temps";
+  BREADCRUMB_LABELS[`/grande-bataille/2026/${c.key}/bilan`] = "Bilan";
+  BREADCRUMB_LABELS[`/grande-bataille/2026/${c.key}/choses-a-faire`] =
+    "Choses à faire";
+}
 
 export function breadcrumbFor(
   pathname: string,

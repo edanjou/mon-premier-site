@@ -21,6 +21,8 @@ import {
   Clock,
   Feather,
   GripVertical,
+  ListChecks,
+  NotebookPen,
   Plus,
   ScrollText,
   Trash2,
@@ -724,11 +726,32 @@ function TournamentsContent() {
         </h1>
         <div className="flex items-center gap-2">
           <Link
+            href="/grande-bataille/2026/tournois/volontaires"
+            className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+          >
+            <Users size={16} />
+            Gestion des volontaires
+          </Link>
+          <Link
             href="/grande-bataille/2026/tournois/feuille-de-temps"
             className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
           >
             <Clock size={16} />
             Feuille de temps
+          </Link>
+          <Link
+            href="/grande-bataille/2026/tournois/bilan"
+            className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+          >
+            <NotebookPen size={16} />
+            Bilan
+          </Link>
+          <Link
+            href="/grande-bataille/2026/tournois/choses-a-faire"
+            className="flex items-center gap-2 rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-black/[.05] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+          >
+            <ListChecks size={16} />
+            Choses à faire
           </Link>
           {canWrite && (
             <button

@@ -30,7 +30,7 @@ export default function GrandeBatailleHubPage() {
               </span>
               <div className="flex flex-col gap-1">
                 <h2
-                  className={`${glofters.className} ${titleSizeClass(y.year)} leading-tight text-foreground`}
+                  className={`${glofters.className} ${titleSizeClass(y.year)} leading-[0.9] text-foreground`}
                 >
                   {y.year}
                 </h2>
@@ -49,7 +49,7 @@ export default function GrandeBatailleHubPage() {
                 <CalendarDays size={25} className="group-hover:animate-wiggle" />
               </span>
               <h2
-                className={`${glofters.className} ${titleSizeClass(y.year)} leading-tight text-foreground`}
+                className={`${glofters.className} ${titleSizeClass(y.year)} leading-[0.9] text-foreground`}
               >
                 {y.year}
               </h2>

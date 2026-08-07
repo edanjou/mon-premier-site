@@ -654,7 +654,7 @@ export default function VolunteersPanel({
                   <Layers size={25} className="group-hover:animate-wiggle" />
                 </span>
                 <h2
-                  className={`${glofters.className} ${titleSizeClass(department.name)} line-clamp-2 min-w-0 break-words leading-tight text-foreground`}
+                  className={`${glofters.className} ${titleSizeClass(department.name)} line-clamp-2 min-w-0 break-words leading-[0.9] text-foreground`}
                 >
                   {department.name}
                 </h2>

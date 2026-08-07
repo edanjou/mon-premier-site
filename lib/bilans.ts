@@ -5,6 +5,7 @@ export type Bilan = {
   coordination_key: string;
   year: number;
   heures_approximatives: string | null;
+  organigramme: string | null;
   bons_coups: string | null;
   pistes_amelioration: string | null;
   priorites: string | null;
@@ -19,6 +20,7 @@ export type Bilan = {
 
 export type BilanSectionsInput = {
   heures_approximatives: string | null;
+  organigramme: string | null;
   bons_coups: string | null;
   pistes_amelioration: string | null;
   priorites: string | null;
@@ -31,7 +33,7 @@ export type BilanSectionsInput = {
 };
 
 const BILAN_SELECT =
-  "id, coordination_key, year, heures_approximatives, bons_coups, pistes_amelioration, priorites, post_mortem_pre_gb, post_mortem_escarmouches, post_mortem_homologation, post_mortem_grandes_batailles, conclusion, mot_de_la_fin, created_at";
+  "id, coordination_key, year, heures_approximatives, organigramme, bons_coups, pistes_amelioration, priorites, post_mortem_pre_gb, post_mortem_escarmouches, post_mortem_homologation, post_mortem_grandes_batailles, conclusion, mot_de_la_fin, created_at";
 
 export async function listBilans(coordinationKey: string): Promise<Bilan[]> {
   const { data, error } = await supabase
