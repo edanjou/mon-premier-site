@@ -667,13 +667,18 @@ export default function Timesheet({
 
           {!isLoading && !error && people.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] table-fixed text-left text-sm">
+              <table
+                className="w-full table-fixed text-left text-sm"
+                style={{
+                  minWidth: `${380 + people.length * 64 + (canWrite ? 48 : 0)}px`,
+                }}
+              >
                 <colgroup>
                   <col className="w-36" />
                   <col className="w-40" />
                   <col />
                   {people.map((p) => (
-                    <col key={p.id} className="w-[100px]" />
+                    <col key={p.id} className="w-16" />
                   ))}
                   {canWrite && <col className="w-12" />}
                 </colgroup>
@@ -683,7 +688,10 @@ export default function Timesheet({
                     <th className="py-2 pr-4 font-medium">Événement</th>
                     <th className="py-2 pr-4 font-medium">Description</th>
                     {people.map((p) => (
-                      <th key={p.id} className="truncate py-2 pr-4 font-medium">
+                      <th
+                        key={p.id}
+                        className="whitespace-normal break-words px-1 py-2 text-center align-bottom font-medium"
+                      >
                         {p.name}
                       </th>
                     ))}
@@ -694,7 +702,7 @@ export default function Timesheet({
                       Total
                     </td>
                     {people.map((p) => (
-                      <td key={p.id} className="py-2 pr-4">
+                      <td key={p.id} className="py-2 px-1 text-center">
                         {totals[p.id] > 0 ? totals[p.id] : ""}
                       </td>
                     ))}
@@ -746,7 +754,7 @@ export default function Timesheet({
                         />
                       </td>
                       {people.map((p) => (
-                        <td key={p.id} className="py-2 pr-4">
+                        <td key={p.id} className="py-2 px-1">
                           <input
                             type="number"
                             min={0}
@@ -757,7 +765,7 @@ export default function Timesheet({
                               handleHoursChange(entry.id, p.id, e.target.value)
                             }
                             onBlur={() => handleHoursBlur(entry.id)}
-                            className={`${cellFieldClassName} w-[100px]`}
+                            className={`${cellFieldClassName} w-full px-1 text-center`}
                           />
                         </td>
                       ))}

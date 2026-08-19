@@ -27,6 +27,13 @@ import {
 import { getOwnProfile } from "@/lib/profile";
 import { listEmailLog, type EmailLogRecord } from "@/lib/email-log";
 import {
+  createEventCoordination,
+  deleteEventCoordination,
+  listEventCoordinations,
+  renameEventCoordination,
+  type EventCoordination,
+} from "@/lib/event-coordinations";
+import {
   createQuartier,
   deleteQuartier,
   listQuartiers,
@@ -41,6 +48,11 @@ import {
   renameTaskType,
   type TaskType,
 } from "@/lib/task-types";
+import {
+  getVolunteerBenefitSettings,
+  setVolunteerBenefitSetting,
+  type VolunteerBenefitSettings,
+} from "@/lib/volunteer-benefit-settings";
 
 async function getAuthToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
@@ -847,6 +859,232 @@ function TaskTypesSettings() {
   );
 }
 
+function EventCoordinationsSettings() {
+  const [coordinations, setCoordinations] = useState<EventCoordination[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCoordinations = async () => {
+    setCoordinations(await listEventCoordinations());
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchCoordinations resolves before the loading flag is cleared
+    fetchCoordinations().finally(() => setIsLoading(false));
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setError(null);
+    try {
+      await createEventCoordination(newName.trim());
+      setNewName("");
+      await fetchCoordinations();
+    } catch {
+      setError("Échec de la création.");
+    }
+  };
+
+  const handleRename = async (id: string) => {
+    if (!editingName.trim()) return;
+    setError(null);
+    try {
+      await renameEventCoordination(id, editingName.trim());
+      setEditingId(null);
+      await fetchCoordinations();
+    } catch {
+      setError("Échec de la modification.");
+    }
+  };
+
+  const handleDelete = async (coordination: EventCoordination) => {
+    if (!window.confirm(`Supprimer la coordination "${coordination.name}" ?`))
+      return;
+    try {
+      await deleteEventCoordination(coordination.id);
+      setCoordinations((prev) => prev.filter((c) => c.id !== coordination.id));
+    } catch {
+      setError("Échec de la suppression.");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <h2 className="font-semibold text-foreground">Nom de coordination</h2>
+      <p className="mt-1 text-sm text-foreground/60">
+        Liste réutilisable dans les menus Coordination de Radios et
+        Réservation des plateaux.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {coordinations.length === 0 && (
+            <p className="text-sm text-foreground/60">
+              Aucune coordination pour l&apos;instant.
+            </p>
+          )}
+          {coordinations.map((c) =>
+            editingId === c.id ? (
+              <div
+                key={c.id}
+                className="flex items-center gap-1 rounded-full border border-black/[.08] py-1 pl-3 pr-1 dark:border-white/[.145]"
+              >
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  className="w-28 rounded border border-black/[.08] bg-white px-2 py-0.5 text-xs text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRename(c.id)}
+                  className="px-1 text-xs font-medium text-primary hover:underline"
+                >
+                  OK
+                </button>
+              </div>
+            ) : (
+              <div
+                key={c.id}
+                className="flex items-center gap-1 rounded-full border border-black/[.08] py-1 pl-3 pr-1 text-xs text-foreground dark:border-white/[.145]"
+              >
+                {c.name}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(c.id);
+                    setEditingName(c.name);
+                  }}
+                  aria-label="Modifier"
+                  className="rounded-full p-1 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                >
+                  <Feather size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(c)}
+                  aria-label="Supprimer"
+                  className="rounded-full p-1 text-foreground/60 transition-colors hover:bg-black/[.05] dark:hover:bg-white/[.08]"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+
+      <form onSubmit={handleCreate} className="mt-3 flex items-center gap-2">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Nouvelle coordination…"
+          className="w-64 rounded-full border border-black/[.08] bg-white px-3 py-1.5 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
+        <button
+          type="submit"
+          className="rounded-full bg-primary p-1.5 text-white transition-colors hover:bg-[#0c4390]"
+        >
+          <Plus size={16} />
+        </button>
+      </form>
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
+function VolunteerBenefitSettingsPanel() {
+  const [settings, setSettings] = useState<VolunteerBenefitSettings | null>(
+    null,
+  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVolunteerBenefitSettings().then((s) => {
+      setSettings(s);
+      setIsLoading(false);
+    });
+  }, []);
+
+  const handleChange = (
+    field: keyof VolunteerBenefitSettings,
+    value: number,
+  ) => {
+    setSettings((prev) => (prev ? { ...prev, [field]: value } : prev));
+  };
+
+  const handleBlur = (field: keyof VolunteerBenefitSettings) => {
+    if (!settings) return;
+    setError(null);
+    setVolunteerBenefitSetting(field, settings[field]).catch(() =>
+      setError("Échec de la mise à jour."),
+    );
+  };
+
+  const field = (
+    label: string,
+    key: keyof VolunteerBenefitSettings,
+    suffix: string,
+  ) => (
+    <label className="flex flex-col gap-1 text-sm text-foreground">
+      {label}
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          value={settings?.[key] ?? 0}
+          onChange={(e) => handleChange(key, Number(e.target.value))}
+          onBlur={() => handleBlur(key)}
+          className="w-20 rounded border border-black/[.08] bg-white px-2 py-1 text-sm text-foreground dark:border-white/[.145] dark:bg-zinc-800"
+        />
+        <span className="text-xs text-foreground/50">{suffix}</span>
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
+      <h2 className="font-semibold text-foreground">
+        Rabais et avantages des volontaires
+      </h2>
+      <p className="mt-1 text-sm text-foreground/60">
+        Calculés automatiquement dans la vue centralisée des volontaires,
+        selon le nombre d&apos;heures total de chaque personne.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-foreground/60">Chargement…</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {field("Rabais à partir de", "discountMinHours", "h")}
+          {field("Rabais par heure", "discountRatePerHour", "$/h")}
+          {field("Rabais gratuit à partir de", "discountFreeHours", "h")}
+          {field("Stationnement à partir de", "parkingHours", "h")}
+          {field("Cadeau à partir de", "giftHours", "h")}
+          {field("Heures par repas", "hoursPerMeal", "h")}
+          {field("Heures par douche", "hoursPerShower", "h")}
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
 export default function ParametresPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -888,6 +1126,8 @@ export default function ParametresPage() {
           <BattlefieldsSettings />
           <QuartiersSettings />
           <TaskTypesSettings />
+          <EventCoordinationsSettings />
+          <VolunteerBenefitSettingsPanel />
         </div>
       ) : (
         <p className="mt-2 text-foreground/70">À venir.</p>

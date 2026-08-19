@@ -59,6 +59,7 @@ export type HomologationSlot = {
   quartier_id: string;
   start_time: string | null;
   end_time: string | null;
+  capacity: number;
   position: number;
 };
 
@@ -66,6 +67,7 @@ export type HomologationSlotInput = {
   quartier_id: string;
   start_time: string | null;
   end_time: string | null;
+  capacity: number;
   position: number;
 };
 
@@ -74,7 +76,7 @@ export async function listHomologationSlots(
 ): Promise<HomologationSlot[]> {
   const { data, error } = await supabase
     .from("homologation_schedule_slots")
-    .select("id, quartier_id, start_time, end_time, position")
+    .select("id, quartier_id, start_time, end_time, capacity, position")
     .eq("schedule_id", scheduleId)
     .order("position", { ascending: true });
   if (error) throw error;
@@ -99,8 +101,37 @@ export async function saveHomologationSlots(
       quartier_id: slot.quartier_id,
       start_time: slot.start_time,
       end_time: slot.end_time,
+      capacity: slot.capacity,
       position: index,
     })),
   );
+  if (error) throw error;
+}
+
+export type HomologationRegistration = {
+  id: string;
+  slot_id: string;
+  character_name: string;
+  created_at: string;
+};
+
+export async function listRegistrationsForSlots(
+  slotIds: string[],
+): Promise<HomologationRegistration[]> {
+  if (slotIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("homologation_registrations")
+    .select("id, slot_id, character_name, created_at")
+    .in("slot_id", slotIds)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function deleteRegistration(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("homologation_registrations")
+    .delete()
+    .eq("id", id);
   if (error) throw error;
 }

@@ -7,11 +7,15 @@ export type DepartmentSlot = {
   department_id: string;
   label: string;
   hours: number;
+  date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  needed_volunteers: number | null;
   position: number;
 };
 
 const SLOT_SELECT =
-  "id, coordination_key, year, department_id, label, hours, position";
+  "id, coordination_key, year, department_id, label, hours, date, start_time, end_time, needed_volunteers, position";
 
 export async function listAllDepartmentSlots(
   coordinationKey: string,
@@ -33,6 +37,10 @@ export async function createDepartmentSlot(input: {
   department_id: string;
   label: string;
   hours: number;
+  date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  needed_volunteers: number | null;
   position: number;
 }): Promise<DepartmentSlot> {
   const { data, error } = await supabase
@@ -46,7 +54,14 @@ export async function createDepartmentSlot(input: {
 
 export async function updateDepartmentSlot(
   id: string,
-  input: { label: string; hours: number },
+  input: {
+    label: string;
+    hours: number;
+    date: string | null;
+    start_time: string | null;
+    end_time: string | null;
+    needed_volunteers: number | null;
+  },
 ): Promise<void> {
   const { error } = await supabase
     .from("department_slots")
@@ -61,4 +76,18 @@ export async function deleteDepartmentSlot(id: string): Promise<void> {
     .delete()
     .eq("id", id);
   if (error) throw error;
+}
+
+export async function reorderDepartmentSlots(
+  updates: { id: string; position: number }[],
+): Promise<void> {
+  await Promise.all(
+    updates.map(async ({ id, position }) => {
+      const { error } = await supabase
+        .from("department_slots")
+        .update({ position })
+        .eq("id", id);
+      if (error) throw error;
+    }),
+  );
 }

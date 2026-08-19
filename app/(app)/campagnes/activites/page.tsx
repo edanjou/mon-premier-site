@@ -33,6 +33,7 @@ import {
   FileText,
   FlagTriangleRight,
   GripVertical,
+  Hammer,
   Import,
   ListChecks,
   Map as MapIcon,
@@ -78,6 +79,7 @@ import {
   buildFrontsExportInfo,
   downloadBlob,
   exportActivityDocumentToDocx,
+  exportMontageDocumentToDocx,
 } from "@/lib/activity-docx-export";
 import {
   buildDefaultBlocks,
@@ -2625,7 +2627,7 @@ function ActivityDocumentModal({
   useEffect(() => {
     Promise.all([
       listActivityChapters(activity.id),
-      listDocumentBlocks(activity.id),
+      listDocumentBlocks(activity.id, "briefing"),
     ])
       .then(([chapterList, savedBlocks]) => {
         setChapters(chapterList);
@@ -2747,7 +2749,7 @@ function ActivityDocumentModal({
     setError(null);
     setIsSaving(true);
     try {
-      await saveDocumentBlocks(activity.id, blocks);
+      await saveDocumentBlocks(activity.id, "briefing", blocks);
     } catch {
       setError("Échec de l'enregistrement.");
     } finally {
@@ -2760,7 +2762,7 @@ function ActivityDocumentModal({
     setError(null);
     setIsExporting(true);
     try {
-      await saveDocumentBlocks(activity.id, blocks);
+      await saveDocumentBlocks(activity.id, "briefing", blocks);
       const [scheduleBlocks, frontAssignments] = await Promise.all([
         listScheduleBlocks(activity.id),
         getActivityFrontAssignments(activity.id),
@@ -2924,6 +2926,231 @@ function ActivityDocumentModal({
               className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <FileText size={14} />
+              {isExporting ? "…" : "Exporter en Word"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MontageDocumentModal({
+  activity,
+  canWrite,
+  onClose,
+}: {
+  activity: Activity;
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  const [blocks, setBlocks] = useState<DocumentBlock[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listDocumentBlocks(activity.id, "montage")
+      .then(setBlocks)
+      .finally(() => setIsLoading(false));
+  }, [activity.id]);
+
+  const blockTitle = (block: DocumentBlock): string =>
+    block.label || "Bloc de texte";
+
+  const addTextBlock = () => {
+    if (!canWrite) return;
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        block_type: "custom_text",
+        chapter_id: null,
+        label: "",
+        content: "",
+        position: prev.length,
+      },
+    ]);
+  };
+
+  const removeBlock = (id: string) => {
+    if (!canWrite) return;
+    setBlocks((prev) => prev.filter((b) => b.id !== id));
+  };
+
+  const updateBlockLabel = (id: string, label: string) => {
+    if (!canWrite) return;
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, label } : b)));
+  };
+
+  const updateBlockContent = (id: string, content: string) => {
+    if (!canWrite) return;
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, content } : b)),
+    );
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!canWrite) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setBlocks((prev) => {
+      const fromIndex = prev.findIndex((b) => b.id === active.id);
+      const toIndex = prev.findIndex((b) => b.id === over.id);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      return arrayMove(prev, fromIndex, toIndex);
+    });
+  };
+
+  const handleSave = async () => {
+    if (!canWrite) return;
+    setError(null);
+    setIsSaving(true);
+    try {
+      await saveDocumentBlocks(activity.id, "montage", blocks);
+    } catch {
+      setError("Échec de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!canWrite) return;
+    setError(null);
+    setIsExporting(true);
+    try {
+      await saveDocumentBlocks(activity.id, "montage", blocks);
+      const blob = await exportMontageDocumentToDocx({
+        activity,
+        formattedDate: formatActivityDate(activity.date),
+        blocks,
+      });
+      downloadBlob(blob, `Montage — ${activity.name}.docx`);
+    } catch {
+      setError("Échec de l'exportation Word.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-foreground">
+            Montage — {activity.name}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="rounded-full p-1 hover:bg-black/[.04] dark:hover:bg-white/[.08]"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {isLoading && (
+          <p className="text-sm text-foreground/60">Chargement…</p>
+        )}
+
+        {!isLoading && (
+          <>
+            <p className="rounded-lg border border-black/[.08] px-3 py-2 text-sm font-medium text-foreground/70 dark:border-white/[.145]">
+              {activity.name}{" "}
+              <span className="font-normal text-foreground/50">
+                (titre, toujours en premier)
+              </span>
+            </p>
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={blocks.map((b) => b.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="flex flex-col gap-2">
+                  {blocks.map((block) => (
+                    <SortableDocumentBlockRow
+                      key={block.id}
+                      block={block}
+                      title={blockTitle(block)}
+                      onRemove={removeBlock}
+                      onLabelChange={updateBlockLabel}
+                      onContentChange={updateBlockContent}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            {blocks.length === 0 && (
+              <p className="text-sm text-foreground/60">
+                Aucun bloc pour l&apos;instant.
+              </p>
+            )}
+
+            {canWrite && (
+              <button
+                type="button"
+                onClick={addTextBlock}
+                className="flex items-center justify-center gap-2 self-start rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+              >
+                <Plus size={14} />
+                Ajouter un bloc de texte
+              </button>
+            )}
+          </>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-2 border-t border-black/[.08] pt-3 dark:border-white/[.08]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Fermer
+          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              {isSaving ? "…" : "Enregistrer la structure"}
+            </button>
+          )}
+          {canWrite && (
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={isExporting || isLoading}
+              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0c4390] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Hammer size={14} />
               {isExporting ? "…" : "Exporter en Word"}
             </button>
           )}
@@ -3412,7 +3639,7 @@ function MarechalTeamModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground">{activity.name}</h2>
@@ -3498,7 +3725,7 @@ function MedicTeamModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground">{activity.name}</h2>
@@ -3536,7 +3763,7 @@ function WeaponMasterTeamModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900"
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground">{activity.name}</h2>
@@ -3572,6 +3799,9 @@ function ActivitesContent() {
   );
   const [detailsActivity, setDetailsActivity] = useState<Activity | null>(null);
   const [documentActivity, setDocumentActivity] = useState<Activity | null>(
+    null,
+  );
+  const [montageActivity, setMontageActivity] = useState<Activity | null>(
     null,
   );
   const [linkedDocumentsActivity, setLinkedDocumentsActivity] =
@@ -3889,6 +4119,13 @@ function ActivitesContent() {
                                 Document
                               </button>
                               <button
+                                onClick={() => setMontageActivity(activity)}
+                                className="flex items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-white/[.08]"
+                              >
+                                <Hammer size={14} />
+                                Montage
+                              </button>
+                              <button
                                 onClick={() =>
                                   setLinkedDocumentsActivity(activity)
                                 }
@@ -4184,6 +4421,13 @@ function ActivitesContent() {
           activity={documentActivity}
           canWrite={hasFullAccess}
           onClose={() => setDocumentActivity(null)}
+        />
+      )}
+      {montageActivity && (
+        <MontageDocumentModal
+          activity={montageActivity}
+          canWrite={hasFullAccess}
+          onClose={() => setMontageActivity(null)}
         />
       )}
       {linkedDocumentsActivity && (

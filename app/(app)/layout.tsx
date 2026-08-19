@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Castle, LogOut } from "lucide-react";
+import { LayoutDashboard, LogOut } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -303,7 +303,7 @@ export default function DashboardLayout({
             <SidebarItem
               href="/tableau-de-bord"
               label="Tableau de bord"
-              icon={Castle}
+              icon={LayoutDashboard}
               active={pathname === "/tableau-de-bord"}
             />
             <DndContext

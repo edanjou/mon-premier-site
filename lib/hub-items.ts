@@ -2,10 +2,13 @@ import {
   Archive,
   Award,
   Axe,
-  BadgeCheck,
-  Briefcase,
+  Brain,
+  BriefcaseMedical,
+  CalendarClock,
+  Castle,
   ChessKnight,
   ChessPawn,
+  CircleDollarSign,
   Clock,
   ClipboardList,
   Drama,
@@ -13,15 +16,18 @@ import {
   Home,
   IdCard,
   Inbox,
-  Info,
+  KeyRound,
   ListChecks,
   MapPinned,
   MessageSquarePlus,
   NotebookPen,
+  Package,
+  PencilRuler,
   PocketKnife,
+  Printer,
+  Radio,
   ScrollText,
-  Shield,
-  ShieldAlert,
+  ShieldCheck,
   ShieldUser,
   Swords,
   Theater,
@@ -47,7 +53,7 @@ export const COMBAT_ITEMS: HubItem[] = [
   {
     href: "/grande-bataille/2026/combat/homologation",
     label: "Homologation",
-    icon: BadgeCheck,
+    icon: ShieldCheck,
   },
   {
     href: "/grande-bataille/2026/combat/volontaires",
@@ -64,7 +70,7 @@ export const COMBAT_ITEMS: HubItem[] = [
   {
     href: "/grande-bataille/2026/combat/grandes-batailles",
     label: "Grandes Batailles",
-    icon: Shield,
+    icon: Castle,
     moduleKey: "grandes-batailles",
   },
   {
@@ -72,6 +78,45 @@ export const COMBAT_ITEMS: HubItem[] = [
     label: "Bilan",
     icon: NotebookPen,
     moduleKey: "bilan",
+  },
+  {
+    href: "/grande-bataille/2026/combat/inventaire",
+    label: "Inventaire matériel",
+    icon: Package,
+    moduleKey: "inventaire-combat",
+  },
+];
+
+export const OUTILS_ITEMS: HubItem[] = [
+  {
+    href: "/grande-bataille/2026/outils/reservation-plateaux",
+    label: "Réservation des plateaux",
+    icon: CalendarClock,
+    moduleKey: "plateaux",
+  },
+  {
+    href: "/grande-bataille/2026/outils/volontaires",
+    label: "Gestion des volontaires",
+    icon: Users,
+    moduleKey: "volontaires-centralise",
+  },
+  {
+    href: "/grande-bataille/2026/outils/radios",
+    label: "Radios",
+    icon: Radio,
+    moduleKey: "radios",
+  },
+  {
+    href: "/grande-bataille/2026/outils/cles",
+    label: "Clés",
+    icon: KeyRound,
+    moduleKey: "cles",
+  },
+  {
+    href: "/grande-bataille/2026/outils/impressions",
+    label: "Impressions",
+    icon: Printer,
+    moduleKey: "impressions",
   },
 ];
 
@@ -84,17 +129,24 @@ export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
     childItems: COMBAT_ITEMS,
   },
   {
+    href: "/grande-bataille/2026/outils",
+    label: "Outils",
+    icon: PencilRuler,
+    noGate: true,
+    childItems: OUTILS_ITEMS,
+  },
+  {
     href: "/grande-bataille/2026/tournois",
     label: "Tournois",
     icon: Trophy,
     moduleKey: "tournois",
   },
-  { href: "/grande-bataille/2026/generale", label: "Générale", icon: Info, moduleKey: "generale" },
+  { href: "/grande-bataille/2026/generale", label: "Générale", icon: Brain, moduleKey: "generale" },
   { href: "/grande-bataille/2026/jeu-gb", label: "Jeu", icon: ChessPawn, moduleKey: "jeu-gb" },
   {
     href: "/grande-bataille/2026/securite",
     label: "Sécurité",
-    icon: ShieldAlert,
+    icon: BriefcaseMedical,
     moduleKey: "securite",
   },
   {
@@ -118,7 +170,7 @@ export const GRANDE_BATAILLE_ITEMS: HubItem[] = [
   {
     href: "/grande-bataille/2026/administration",
     label: "Administration",
-    icon: Briefcase,
+    icon: CircleDollarSign,
     moduleKey: "administration",
   },
 ];
@@ -139,6 +191,19 @@ export const EXTRA_COORDINATIONS: { key: string; label: string }[] = [
 
 export function coordinationLabel(key: string): string {
   return EXTRA_COORDINATIONS.find((c) => c.key === key)?.label ?? key;
+}
+
+// All 9 coordinations (the 2 with their own static folders + the 7 simple
+// ones), for cross-coordination tools like the centralized volunteer view
+// and the plateau booking board.
+export const ALL_COORDINATIONS: { key: string; label: string }[] = [
+  { key: "combat", label: "Combat" },
+  { key: "tournois", label: "Tournois" },
+  ...EXTRA_COORDINATIONS,
+];
+
+export function allCoordinationLabel(key: string): string {
+  return ALL_COORDINATIONS.find((c) => c.key === key)?.label ?? key;
 }
 
 export const CAMPAGNES_ITEMS: HubItem[] = [
@@ -234,6 +299,7 @@ const BREADCRUMB_LABELS: Record<string, string> = Object.fromEntries(
     ...CAMPAGNES_ITEMS,
     ...GRANDE_BATAILLE_ITEMS,
     ...COMBAT_ITEMS,
+    ...OUTILS_ITEMS,
     ...TOP_BAR_ITEMS,
   ]
     .filter((item) => !item.disabled && item.href.startsWith("/"))
@@ -247,6 +313,17 @@ BREADCRUMB_LABELS["/grande-bataille/2026/tournois/volontaires"] =
 BREADCRUMB_LABELS["/grande-bataille/2026/tournois/bilan"] = "Bilan";
 BREADCRUMB_LABELS["/grande-bataille/2026/tournois/choses-a-faire"] =
   "Choses à faire";
+BREADCRUMB_LABELS["/grande-bataille/2026/combat/homologation/horaires"] =
+  "Horaires";
+BREADCRUMB_LABELS["/grande-bataille/2026/combat/homologation/inventaire"] =
+  "Inventaire matériel";
+BREADCRUMB_LABELS["/grande-bataille/2026/combat/homologation/inscriptions"] =
+  "Inscription mobile";
+BREADCRUMB_LABELS[
+  "/grande-bataille/2026/combat/homologation/machines-de-guerre"
+] = "Machines de guerre";
+BREADCRUMB_LABELS["/grande-bataille/2026/combat/homologation/bestiaire"] =
+  "Bestiaire";
 for (const c of EXTRA_COORDINATIONS) {
   BREADCRUMB_LABELS[`/grande-bataille/2026/${c.key}/volontaires`] =
     "Gestion des volontaires";
@@ -278,6 +355,9 @@ export function hubContextFor(pathname: string): {
 } {
   if (pathname.startsWith("/grande-bataille/2026/combat")) {
     return { items: COMBAT_ITEMS, orderColumn: "combat_order" };
+  }
+  if (pathname.startsWith("/grande-bataille/2026/outils")) {
+    return { items: OUTILS_ITEMS, orderColumn: "outils_order" };
   }
   if (pathname.startsWith("/grande-bataille/2026")) {
     return { items: GRANDE_BATAILLE_ITEMS, orderColumn: "grande_bataille_order" };

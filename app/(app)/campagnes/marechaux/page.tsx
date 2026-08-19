@@ -324,6 +324,8 @@ function MarechalAvailabilityModal({
           activity_id: activityId,
           is_available: checked,
           is_assigned: false,
+          is_confirmed: false,
+          is_registered: false,
           briefing_7h45: null,
           homologation_8h9h: null,
           homologation_9h10h: null,

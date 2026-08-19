@@ -6,11 +6,13 @@ export type WeaponMaster = {
   created_at: string;
   name: string;
   player_name: string | null;
+  player_email: string | null;
 };
 
 type RawCharacterJoin = {
   name: string;
   player_name: string | null;
+  player_email: string | null;
 } | null;
 
 type RawWeaponMaster = {
@@ -30,11 +32,12 @@ function normalizeWeaponMaster(row: RawWeaponMaster): WeaponMaster {
     created_at: row.created_at,
     name: character?.name ?? "",
     player_name: character?.player_name ?? null,
+    player_email: character?.player_email ?? null,
   };
 }
 
 const WEAPON_MASTER_SELECT =
-  "id, character_id, created_at, characters(name, player_name)";
+  "id, character_id, created_at, characters(name, player_name, player_email)";
 
 export async function listWeaponMasters(): Promise<WeaponMaster[]> {
   const { data, error } = await supabase
@@ -70,6 +73,8 @@ export type WeaponMasterActivityStatus = {
   activity_id: string;
   is_available: boolean;
   is_assigned: boolean;
+  is_confirmed: boolean;
+  is_registered: boolean;
   front_color: string | null;
 };
 
@@ -78,7 +83,9 @@ export async function listWeaponMasterActivityStatuses(
 ): Promise<WeaponMasterActivityStatus[]> {
   const { data, error } = await supabase
     .from("weapon_master_activity_status")
-    .select("weapon_master_id, activity_id, is_available, is_assigned, front_color")
+    .select(
+      "weapon_master_id, activity_id, is_available, is_assigned, is_confirmed, is_registered, front_color",
+    )
     .eq("activity_id", activityId);
   if (error) throw error;
   return data ?? [];
@@ -90,12 +97,14 @@ export async function setWeaponMasterActivityStatus(
   input: {
     is_available?: boolean;
     is_assigned?: boolean;
+    is_confirmed?: boolean;
+    is_registered?: boolean;
     front_color?: string | null;
   },
 ): Promise<void> {
   const { data: existing } = await supabase
     .from("weapon_master_activity_status")
-    .select("is_available, is_assigned, front_color")
+    .select("is_available, is_assigned, is_confirmed, is_registered, front_color")
     .eq("weapon_master_id", weaponMasterId)
     .eq("activity_id", activityId)
     .maybeSingle();
@@ -106,6 +115,8 @@ export async function setWeaponMasterActivityStatus(
       activity_id: activityId,
       is_available: input.is_available ?? existing?.is_available ?? false,
       is_assigned: input.is_assigned ?? existing?.is_assigned ?? false,
+      is_confirmed: input.is_confirmed ?? existing?.is_confirmed ?? false,
+      is_registered: input.is_registered ?? existing?.is_registered ?? false,
       front_color:
         input.front_color !== undefined
           ? input.front_color

@@ -7,11 +7,13 @@ export type Medic = {
   is_responsable: boolean;
   name: string;
   player_name: string | null;
+  player_email: string | null;
 };
 
 type RawCharacterJoin = {
   name: string;
   player_name: string | null;
+  player_email: string | null;
 } | null;
 
 type RawMedic = {
@@ -33,11 +35,12 @@ function normalizeMedic(row: RawMedic): Medic {
     is_responsable: row.is_responsable,
     name: character?.name ?? "",
     player_name: character?.player_name ?? null,
+    player_email: character?.player_email ?? null,
   };
 }
 
 const MEDIC_SELECT =
-  "id, character_id, created_at, is_responsable, characters(name, player_name)";
+  "id, character_id, created_at, is_responsable, characters(name, player_name, player_email)";
 
 export async function listMedics(): Promise<Medic[]> {
   const { data, error } = await supabase
@@ -82,6 +85,8 @@ export type MedicActivityStatus = {
   activity_id: string;
   is_available: boolean;
   is_assigned: boolean;
+  is_confirmed: boolean;
+  is_registered: boolean;
 };
 
 export async function listMedicActivityStatuses(
@@ -89,7 +94,9 @@ export async function listMedicActivityStatuses(
 ): Promise<MedicActivityStatus[]> {
   const { data, error } = await supabase
     .from("medic_activity_status")
-    .select("medic_id, activity_id, is_available, is_assigned")
+    .select(
+      "medic_id, activity_id, is_available, is_assigned, is_confirmed, is_registered",
+    )
     .eq("activity_id", activityId);
   if (error) throw error;
   return data ?? [];
@@ -98,11 +105,16 @@ export async function listMedicActivityStatuses(
 export async function setMedicActivityStatus(
   medicId: string,
   activityId: string,
-  input: { is_available?: boolean; is_assigned?: boolean },
+  input: {
+    is_available?: boolean;
+    is_assigned?: boolean;
+    is_confirmed?: boolean;
+    is_registered?: boolean;
+  },
 ): Promise<void> {
   const { data: existing } = await supabase
     .from("medic_activity_status")
-    .select("is_available, is_assigned")
+    .select("is_available, is_assigned, is_confirmed, is_registered")
     .eq("medic_id", medicId)
     .eq("activity_id", activityId)
     .maybeSingle();
@@ -113,6 +125,8 @@ export async function setMedicActivityStatus(
       activity_id: activityId,
       is_available: input.is_available ?? existing?.is_available ?? false,
       is_assigned: input.is_assigned ?? existing?.is_assigned ?? false,
+      is_confirmed: input.is_confirmed ?? existing?.is_confirmed ?? false,
+      is_registered: input.is_registered ?? existing?.is_registered ?? false,
     },
     { onConflict: "medic_id,activity_id" },
   );

@@ -8,6 +8,7 @@ export type Volunteer = {
   created_at: string;
   hours_confirmed: boolean;
   discount_scheduled: boolean;
+  hours_adjustment: number;
   name: string;
   player_name: string | null;
   player_email: string | null;
@@ -27,6 +28,7 @@ type RawVolunteer = {
   created_at: string;
   hours_confirmed: boolean;
   discount_scheduled: boolean;
+  hours_adjustment: number;
   characters: RawCharacterJoin | RawCharacterJoin[];
 };
 
@@ -42,6 +44,7 @@ function normalizeVolunteer(row: RawVolunteer): Volunteer {
     created_at: row.created_at,
     hours_confirmed: row.hours_confirmed,
     discount_scheduled: row.discount_scheduled,
+    hours_adjustment: row.hours_adjustment,
     name: character?.name ?? "",
     player_name: character?.player_name ?? null,
     player_email: character?.player_email ?? null,
@@ -49,7 +52,7 @@ function normalizeVolunteer(row: RawVolunteer): Volunteer {
 }
 
 const VOLUNTEER_SELECT =
-  "id, character_id, coordination_key, year, created_at, hours_confirmed, discount_scheduled, characters(name, player_name, player_email)";
+  "id, character_id, coordination_key, year, created_at, hours_confirmed, discount_scheduled, hours_adjustment, characters(name, player_name, player_email)";
 
 export async function listVolunteers(
   coordinationKey: string,
@@ -97,6 +100,31 @@ export async function setVolunteerStatus(
     .from("volunteers")
     .update({ [field]: value })
     .eq("id", id);
+  if (error) throw error;
+}
+
+export async function setVolunteerHoursAdjustment(
+  id: string,
+  value: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from("volunteers")
+    .update({ hours_adjustment: value })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Used from the centralized volunteer view: a character can have one
+// `volunteers` row per coordination, so scheduling their discount touches
+// every row at once rather than a single id.
+export async function setDiscountScheduledForCharacter(
+  characterId: number,
+  value: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("volunteers")
+    .update({ discount_scheduled: value })
+    .eq("character_id", characterId);
   if (error) throw error;
 }
 

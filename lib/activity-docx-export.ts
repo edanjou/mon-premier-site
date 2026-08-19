@@ -495,6 +495,39 @@ async function chapterChildren(chapter: ActivityChapter): Promise<Paragraph[]> {
   return children;
 }
 
+export async function exportMontageDocumentToDocx(input: {
+  activity: Activity;
+  formattedDate: string;
+  blocks: DocumentBlock[];
+}): Promise<Blob> {
+  const { activity, formattedDate, blocks } = input;
+
+  const children: (Paragraph | Table)[] = [
+    ...titlePage(activity.name, formattedDate),
+  ];
+
+  for (const block of blocks) {
+    if (block.block_type !== "custom_text") continue;
+    if (block.label) {
+      children.push(heading(block.label, 3));
+    }
+    children.push(...htmlToParagraphs(block.content));
+  }
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: DOC_FONT, size: 22, color: COLORS.ink },
+        },
+      },
+    },
+    sections: [{ children }],
+  });
+
+  return Packer.toBlob(doc);
+}
+
 export async function exportActivityDocumentToDocx(input: {
   activity: Activity;
   formattedDate: string;

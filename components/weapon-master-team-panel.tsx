@@ -1,5 +1,6 @@
 "use client";
 
+import { Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   FRONT_COLORS,
@@ -38,10 +39,17 @@ export default function WeaponMasterTeamPanel({
   const [statuses, setStatuses] = useState<
     Record<
       string,
-      { is_available: boolean; is_assigned: boolean; front_color: string | null }
+      {
+        is_available: boolean;
+        is_assigned: boolean;
+        is_confirmed: boolean;
+        is_registered: boolean;
+        front_color: string | null;
+      }
     >
   >({});
   const [isLoading, setIsLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     listWeaponMasterActivityStatuses(activity.id)
@@ -51,6 +59,8 @@ export default function WeaponMasterTeamPanel({
           {
             is_available: boolean;
             is_assigned: boolean;
+            is_confirmed: boolean;
+            is_registered: boolean;
             front_color: string | null;
           }
         > = {};
@@ -58,6 +68,8 @@ export default function WeaponMasterTeamPanel({
           map[r.weapon_master_id] = {
             is_available: r.is_available,
             is_assigned: r.is_assigned,
+            is_confirmed: r.is_confirmed,
+            is_registered: r.is_registered,
             front_color: r.front_color,
           };
         });
@@ -68,12 +80,14 @@ export default function WeaponMasterTeamPanel({
 
   const toggle = async (
     weaponMasterId: string,
-    field: "is_available" | "is_assigned",
+    field: "is_available" | "is_assigned" | "is_confirmed" | "is_registered",
   ) => {
     if (!canWrite) return;
     const current = statuses[weaponMasterId] ?? {
       is_available: false,
       is_assigned: false,
+      is_confirmed: false,
+      is_registered: false,
       front_color: null,
     };
     const next = { ...current, [field]: !current[field] };
@@ -110,6 +124,8 @@ export default function WeaponMasterTeamPanel({
     const current = statuses[weaponMasterId] ?? {
       is_available: false,
       is_assigned: false,
+      is_confirmed: false,
+      is_registered: false,
       front_color: null,
     };
     const next = { ...current, front_color: frontColor || null };
@@ -137,8 +153,39 @@ export default function WeaponMasterTeamPanel({
     );
   }
 
+  const assignedEmails = Array.from(
+    new Set(
+      weaponMasters
+        .filter((wm) => statuses[wm.id]?.is_assigned && wm.player_email)
+        .map((wm) => wm.player_email as string),
+    ),
+  );
+
+  const handleCopyAssignedEmails = async () => {
+    if (assignedEmails.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(assignedEmails.join("; "));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      alert("Échec de la copie.");
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={handleCopyAssignedEmails}
+        disabled={assignedEmails.length === 0}
+        title="Copier les courriels des maîtres d'armes assignés"
+        className="flex w-fit items-center gap-1.5 rounded-full border border-black/[.08] px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:bg-black/[.04] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[.145] dark:hover:bg-white/[.08]"
+      >
+        <Copy size={14} />
+        {copied
+          ? "Copié !"
+          : `Copier les courriels des assignés (${assignedEmails.length})`}
+      </button>
       {[...weaponMasters]
         .sort((a, b) =>
           marechalDisplayName(a).localeCompare(marechalDisplayName(b), "fr"),
@@ -147,6 +194,8 @@ export default function WeaponMasterTeamPanel({
           const status = statuses[wm.id] ?? {
             is_available: false,
             is_assigned: false,
+            is_confirmed: false,
+            is_registered: false,
             front_color: null,
           };
           return (
@@ -193,6 +242,22 @@ export default function WeaponMasterTeamPanel({
                   className={`${pillClassName(status.is_assigned)} disabled:cursor-default`}
                 >
                   Assigné
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggle(wm.id, "is_confirmed")}
+                  disabled={!canWrite}
+                  className={`${pillClassName(status.is_confirmed)} disabled:cursor-default`}
+                >
+                  Confirmé
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggle(wm.id, "is_registered")}
+                  disabled={!canWrite}
+                  className={`${pillClassName(status.is_registered)} disabled:cursor-default`}
+                >
+                  Inscrit
                 </button>
               </div>
             </div>

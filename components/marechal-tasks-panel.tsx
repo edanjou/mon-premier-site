@@ -277,6 +277,8 @@ export default function MarechalTasksPanel({
             activity_id: activity.id,
             is_available: false,
             is_assigned: false,
+            is_confirmed: false,
+            is_registered: false,
             briefing_7h45: null,
             homologation_8h9h: null,
             homologation_9h10h: null,

@@ -567,6 +567,7 @@ export default function UtilisateursPage() {
             <table className="w-full min-w-[600px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/[.08] text-foreground/60 dark:border-white/[.08]">
+                  <th className="py-2 pr-4 font-medium">Titre</th>
                   <th className="py-2 pr-4 font-medium">Nom</th>
                   <th className="py-2 pr-4 font-medium">Email</th>
                   <th className="py-2 pr-4 font-medium">Rôle</th>
@@ -580,6 +581,9 @@ export default function UtilisateursPage() {
                     key={user.id}
                     className="border-b border-black/[.06] odd:bg-black/[.015] dark:border-white/[.06] dark:odd:bg-white/[.03]"
                   >
+                    <td className="py-2 pr-4 text-foreground">
+                      {user.title || "—"}
+                    </td>
                     <td className="py-2 pr-4 text-foreground">
                       {[user.first_name, user.last_name]
                         .filter(Boolean)
@@ -635,6 +639,11 @@ export default function UtilisateursPage() {
                           onClick={() => handleDelete(user)}
                           disabled={user.id === currentUserId}
                           aria-label="Supprimer"
+                          title={
+                            user.id === currentUserId
+                              ? "Tu ne peux pas supprimer ton propre compte."
+                              : "Supprimer"
+                          }
                           className="rounded-full p-2 text-foreground/60 transition-colors hover:bg-black/[.05] disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/[.08]"
                         >
                           <Trash2 size={16} />

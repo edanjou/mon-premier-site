@@ -36,12 +36,12 @@
   --foreground: #f2f4f3;
 }
 
-:where(button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button), aside a) {
+:where(button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):not(.dot-button), aside a) {
   position: relative;
   isolation: isolate;
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button)::before,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):not(.dot-button)::before,
 aside a::before {
   content: "";
   position: absolute;
@@ -54,12 +54,12 @@ aside a::before {
   pointer-events: none;
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):hover::before,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):not(.dot-button):hover::before,
 aside a:hover::before {
   clip-path: circle(150% at 50% 100%);
 }
 
-button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):hover,
+button:not(:disabled):not(.rounded-t-lg):not(thead button):not(.link-button):not(.toolbar-button):not(.picker-button):not(.theme-toggle-button):not(.dot-button):hover,
 aside a:hover {
   color: #1c1c1c;
 }

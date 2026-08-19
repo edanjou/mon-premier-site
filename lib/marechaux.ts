@@ -10,12 +10,14 @@ export type Marechal = {
   created_at: string;
   name: string;
   player_name: string | null;
+  player_email: string | null;
   guild_name: string | null;
 };
 
 type RawCharacterJoin = {
   name: string;
   player_name: string | null;
+  player_email: string | null;
   guilds: { name: string } | { name: string }[] | null;
 } | null;
 
@@ -49,12 +51,13 @@ function normalizeMarechal(row: RawMarechal): Marechal {
     created_at: row.created_at,
     name: character?.name ?? "",
     player_name: character?.player_name ?? null,
+    player_email: character?.player_email ?? null,
     guild_name: guild?.name ?? null,
   };
 }
 
 const MARECHAL_SELECT =
-  "id, character_id, formation_2025, formation_2026, is_campaign_team, notes, created_at, characters(name, player_name, guilds(name))";
+  "id, character_id, formation_2025, formation_2026, is_campaign_team, notes, created_at, characters(name, player_name, player_email, guilds(name))";
 
 export function toTitleCase(value: string): string {
   return value
@@ -130,6 +133,8 @@ export type MarechalActivityStatus = {
   activity_id: string;
   is_available: boolean;
   is_assigned: boolean;
+  is_confirmed: boolean;
+  is_registered: boolean;
   briefing_7h45: string | null;
   homologation_8h9h: string | null;
   homologation_9h10h: string | null;
@@ -149,7 +154,7 @@ export async function listMarechalActivityStatuses(
   const { data, error } = await supabase
     .from("marechal_activity_status")
     .select(
-      "marechal_id, activity_id, is_available, is_assigned, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
+      "marechal_id, activity_id, is_available, is_assigned, is_confirmed, is_registered, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
     )
     .eq("activity_id", activityId)
     .order("position", { ascending: true });
@@ -163,7 +168,7 @@ export async function listActivityStatusesForMarechal(
   const { data, error } = await supabase
     .from("marechal_activity_status")
     .select(
-      "marechal_id, activity_id, is_available, is_assigned, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
+      "marechal_id, activity_id, is_available, is_assigned, is_confirmed, is_registered, briefing_7h45, homologation_8h9h, homologation_9h10h, briefing_17h, position",
     )
     .eq("marechal_id", marechalId);
   if (error) throw error;
@@ -188,11 +193,16 @@ export async function reorderMarechalActivityStatuses(
 export async function setMarechalActivityStatus(
   marechalId: string,
   activityId: string,
-  input: { is_available?: boolean; is_assigned?: boolean },
+  input: {
+    is_available?: boolean;
+    is_assigned?: boolean;
+    is_confirmed?: boolean;
+    is_registered?: boolean;
+  },
 ): Promise<void> {
   const { data: existing } = await supabase
     .from("marechal_activity_status")
-    .select("is_available, is_assigned")
+    .select("is_available, is_assigned, is_confirmed, is_registered")
     .eq("marechal_id", marechalId)
     .eq("activity_id", activityId)
     .maybeSingle();
@@ -203,6 +213,8 @@ export async function setMarechalActivityStatus(
       activity_id: activityId,
       is_available: input.is_available ?? existing?.is_available ?? false,
       is_assigned: input.is_assigned ?? existing?.is_assigned ?? false,
+      is_confirmed: input.is_confirmed ?? existing?.is_confirmed ?? false,
+      is_registered: input.is_registered ?? existing?.is_registered ?? false,
     },
     { onConflict: "marechal_id,activity_id" },
   );

@@ -1,6 +1,8 @@
 import type { ActivityChapter } from "@/lib/activity-chapters";
 import { supabase } from "@/lib/supabase";
 
+export type DocumentType = "briefing" | "montage";
+
 export type DocumentBlockType =
   | "game_text"
   | "details_registration"
@@ -45,11 +47,13 @@ export const STANDARD_BLOCK_ORDER: StandardDocumentBlockType[] = [
 
 export async function listDocumentBlocks(
   activityId: string,
+  documentType: DocumentType = "briefing",
 ): Promise<DocumentBlock[]> {
   const { data, error } = await supabase
     .from("activity_document_blocks")
     .select("*")
     .eq("activity_id", activityId)
+    .eq("document_type", documentType)
     .order("position", { ascending: true });
   if (error) throw error;
   return data ?? [];
@@ -57,12 +61,14 @@ export async function listDocumentBlocks(
 
 export async function saveDocumentBlocks(
   activityId: string,
+  documentType: DocumentType,
   blocks: DocumentBlock[],
 ): Promise<void> {
   const { error: deleteError } = await supabase
     .from("activity_document_blocks")
     .delete()
-    .eq("activity_id", activityId);
+    .eq("activity_id", activityId)
+    .eq("document_type", documentType);
   if (deleteError) throw deleteError;
 
   if (blocks.length === 0) return;
@@ -71,6 +77,7 @@ export async function saveDocumentBlocks(
     blocks.map((block, index) => ({
       id: block.id,
       activity_id: activityId,
+      document_type: documentType,
       block_type: block.block_type,
       chapter_id: block.chapter_id,
       label: block.label,

@@ -30,6 +30,12 @@ export const MODULES: ModuleDefinition[] = [
   { key: "vie-du-duche", label: "Vie du Duché" },
   { key: "operations", label: "Opérations" },
   { key: "administration", label: "Administration" },
+  { key: "plateaux", label: "Réservation des plateaux" },
+  { key: "volontaires-centralise", label: "Gestion des volontaires (centralisée)" },
+  { key: "radios", label: "Radios" },
+  { key: "cles", label: "Clés" },
+  { key: "impressions", label: "Impressions" },
+  { key: "inventaire-combat", label: "Inventaire matériel (Combat)" },
 ];
 
 function moduleByKey(key: string): ModuleDefinition {
@@ -73,6 +79,7 @@ export const PERMISSION_TREE: PermissionTreeNode[] = [
           { type: "leaf", module: moduleByKey("benevoles") },
           { type: "leaf", module: moduleByKey("feuille-de-temps") },
           { type: "leaf", module: moduleByKey("bilan") },
+          { type: "leaf", module: moduleByKey("inventaire-combat") },
         ],
       },
       { type: "leaf", module: moduleByKey("generale") },
@@ -85,6 +92,17 @@ export const PERMISSION_TREE: PermissionTreeNode[] = [
     ],
   },
   { type: "leaf", module: moduleByKey("jeu") },
+  {
+    type: "group",
+    label: "Outils",
+    children: [
+      { type: "leaf", module: moduleByKey("plateaux") },
+      { type: "leaf", module: moduleByKey("volontaires-centralise") },
+      { type: "leaf", module: moduleByKey("radios") },
+      { type: "leaf", module: moduleByKey("cles") },
+      { type: "leaf", module: moduleByKey("impressions") },
+    ],
+  },
 ];
 
 export function collectModules(node: PermissionTreeNode): ModuleDefinition[] {

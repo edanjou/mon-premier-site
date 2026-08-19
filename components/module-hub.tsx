@@ -51,7 +51,8 @@ export type OrderColumn =
   | "dashboard_order"
   | "campagnes_order"
   | "grande_bataille_order"
-  | "combat_order";
+  | "combat_order"
+  | "outils_order";
 
 export function moduleKeyFor(item: HubItem): string {
   if (item.moduleKey) return item.moduleKey;
